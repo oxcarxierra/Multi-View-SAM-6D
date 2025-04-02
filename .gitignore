@@ -1,4 +1,7 @@
-SAM-6D/Data/Example/outputs
+SAM-6D/Data/
+# SAM-6D/Data/BOP
+# SAM-6D/Data/BOP-Templates
+
 SAM-6D/Instance_Segmentation_Model/checkpoints
 SAM-6D/Pose_Estimation_Model/checkpoints
 

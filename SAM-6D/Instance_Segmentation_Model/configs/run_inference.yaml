@@ -15,4 +15,4 @@ hydra:
 
 save_dir: ./log/${name_exp}
 name_exp: sam
-dataset_name:
+dataset_name: tless

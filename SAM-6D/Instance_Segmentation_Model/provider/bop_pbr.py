@@ -49,6 +49,7 @@ class BOPTemplatePBR(BaseBOP):
                 if osp.isdir(osp.join(template_dir, obj_id))
             ]
             obj_ids = sorted(obj_ids)
+            
             logging.info(f"Found {obj_ids} objects in {self.template_dir}")
         self.obj_ids = obj_ids
 
@@ -145,9 +146,7 @@ class BOPTemplatePBR(BaseBOP):
     def load_template_poses(self, level_templates, pose_distribution):
         if pose_distribution == "all":
             self.index_templates = load_index_level_in_level2(level_templates, "all")
-            self.template_poses = get_obj_poses_from_template_level(
-                self.level_templates, self.pose_distribution
-            )
+            self.template_poses = get_obj_poses_from_template_level(self.level_templates, self.pose_distribution)
         else:
             raise NotImplementedError
 
@@ -173,6 +172,8 @@ class BOPTemplatePBR(BaseBOP):
                 self.obj_ids, desc="Finding nearest rendering close to template poses"
             ):
                 selected_index_obj = index_dataframe[self.metaData["obj_id"] == obj_id]
+                if len(selected_index_obj) == 0:
+                    continue
                 # subsample a bit if there are too many frames
                 selected_index_obj = np.random.choice(selected_index_obj, 5000)
                 obj_poses = np.array(
@@ -187,6 +188,7 @@ class BOPTemplatePBR(BaseBOP):
                 idx_keep = finder.search_nearest_query(obj_poses)
                 # update metaData
                 selected_index.extend(selected_index_obj[idx_keep])
+            import pdb; pdb.set_trace()
             self.metaData = self.metaData.iloc[selected_index]
             logging.info(
                 f"Finish processing metaData from {init_size} to {len(self.metaData)}"
