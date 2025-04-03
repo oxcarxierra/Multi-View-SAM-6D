@@ -4,9 +4,9 @@ Forked from : https://github.com/JiehongLin/SAM-6D
 
 ## Version check
 Validated with following environment: 
-- CUDA 12.4
-- python 3.9.21
-- pytorch 2.6
+- CUDA 11.8
+- python 3.9.6
+- pytorch 2.0.0+cu117
 
 
 ## Getting Started
@@ -15,6 +15,8 @@ Validated with following environment:
 Please clone the repository locally:
 ```
 git clone https://github.com/oxcarxierra/SAM-6D.git
+conda create env sam6d python=3.9.6
+cd SAM-6D && pip install requirements.txt
 ```
 Install the environment and download the model checkpoints:
 ```
