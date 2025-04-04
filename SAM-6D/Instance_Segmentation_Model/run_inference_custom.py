@@ -125,7 +125,6 @@ def run_inference(segmentor_model, output_dir, cad_path, rgb_path, depth_path, c
     logging.info("Initializing template")
     template_dir = os.path.join(output_dir, 'templates')
     num_templates = len(glob.glob(f"{template_dir}/*.npy"))
-    import pdb; pdb.set_trace()
     boxes, masks, templates = [], [], []
     for idx in range(num_templates):
         image = Image.open(os.path.join(template_dir, 'rgb_'+str(idx)+'.png'))

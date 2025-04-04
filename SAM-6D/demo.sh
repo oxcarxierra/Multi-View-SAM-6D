@@ -4,6 +4,8 @@ export DEPTH_PATH=/home/ohseun/workspace/SAM-6D/SAM-6D/Data/Example/depth.png   
 export CAMERA_PATH=/home/ohseun/workspace/SAM-6D/SAM-6D/Data/Example/camera.json    # path to given camera intrinsics
 export OUTPUT_DIR=/home/ohseun/workspace/SAM-6D/SAM-6D/Data/Example/outputs 
 
+conda activate sam6d
+
 # Render CAD templates
 cd Render
 # blenderproc run render_custom_templates.py --output_dir ../Data/Example/outputs --cad_path ../Data/Example/obj_000005.ply   #--colorize True 
