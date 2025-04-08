@@ -167,7 +167,9 @@ class Instance_Segmentation_Model(pl.LightningModule):
         ):
             self.ref_data["pointcloud"] = torch.load(pointcloud_path, map_location="cuda:0").to(self.device)
         else:
-            mesh_path = osp.join(self.ref_dataset.root_dir, "models")
+            # import pdb; pdb.set_trace()
+            mesh_path ="/home/ohseun/workspace/SAM-6D/SAM-6D/Data/BOP/tless/models"
+            # mesh_path = osp.join(self.ref_dataset.template_dir, "../../tless/models")
             if not os.path.exists(mesh_path):
                 raise Exception("Can not find the mesh path.")
             for idx in tqdm(
@@ -385,6 +387,10 @@ class Instance_Segmentation_Model(pl.LightningModule):
 
         detections.add_attribute("scores", final_score)
         detections.add_attribute("object_ids", pred_idx_objects)
+
+        topk = torch.topk(final_score, k=min(10, len(final_score)))
+        detections.filter(topk.indices)
+
         detections.apply_nms_per_object_id(
             nms_thresh=self.post_processing_config.nms_thresh
         )
@@ -437,7 +443,7 @@ class Instance_Segmentation_Model(pl.LightningModule):
             result_paths = sorted(
                 [path for path in result_paths if "runtime" not in path]
             )
-            num_workers = 10
+            num_workers = 20
             logging.info(f"Converting npz to json requires {num_workers} workers ...")
             pool = multiprocessing.Pool(processes=num_workers)
             convert_npz_to_json_with_idx = partial(

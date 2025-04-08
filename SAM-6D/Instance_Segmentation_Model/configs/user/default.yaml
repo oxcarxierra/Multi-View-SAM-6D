@@ -1,2 +1,2 @@
-local_root_dir: ../Data
+local_root_dir: /home/ohseun/workspace/SAM-6D/SAM-6D/Data
 slurm_root_dir: ../Data

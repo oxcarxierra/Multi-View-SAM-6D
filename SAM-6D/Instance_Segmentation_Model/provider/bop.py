@@ -60,17 +60,28 @@ class BOPTemplate(Dataset):
     def __getitem__(self, idx):
         templates, masks, boxes = [], [], []
         for id_template in self.index_templates:
-            image = Image.open(
-                f"{self.template_dir}/obj_{self.obj_ids[idx]:06d}/{id_template:06d}.png"
-            )
-            boxes.append(image.getbbox())
-
-            mask = image.getchannel("A")
-            mask = torch.from_numpy(np.array(mask) / 255).float()
-            masks.append(mask.unsqueeze(-1))
+            # From run_inference_custom.py
+            image = Image.open(os.path.join(template_dir, 'rgb_'+str(idx)+'.png'))
+            mask = Image.open(os.path.join(template_dir, 'mask_'+str(idx)+'.png'))
+            boxes.append(mask.getbbox())
 
             image = torch.from_numpy(np.array(image.convert("RGB")) / 255).float()
+            mask = torch.from_numpy(np.array(mask.convert("L")) / 255).float()
+            image = image * mask[:, :, None]
             templates.append(image)
+            masks.append(mask.unsqueeze(-1))
+
+            # image = Image.open(
+            #     f"{self.template_dir}/obj_{self.obj_ids[idx]:06d}/{id_template:06d}.png"
+            # )
+            # boxes.append(image.getbbox())
+
+            # mask = image.getchannel("A")
+            # mask = torch.from_numpy(np.array(mask) / 255).float()
+            # masks.append(mask.unsqueeze(-1))
+
+            # image = torch.from_numpy(np.array(image.convert("RGB")) / 255).float()
+            # templates.append(image)
 
         templates = torch.stack(templates).permute(0, 3, 1, 2)
         masks = torch.stack(masks).permute(0, 3, 1, 2)

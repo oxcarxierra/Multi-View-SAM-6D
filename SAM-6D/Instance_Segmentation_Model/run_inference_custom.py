@@ -83,6 +83,7 @@ def visualize(rgb, detections, save_path="tmp.png"):
 def batch_input_data(depth_path, cam_path, device):
     batch = {}
     cam_info = load_json(cam_path)
+    cam_info = cam_info["1"]
     depth = np.array(imageio.imread(depth_path)).astype(np.int32)
     cam_K = np.array(cam_info['cam_K']).reshape((3, 3))
     depth_scale = np.array(cam_info['depth_scale'])
@@ -123,7 +124,9 @@ def run_inference(segmentor_model, output_dir, cad_path, rgb_path, depth_path, c
         
     
     logging.info("Initializing template")
-    template_dir = os.path.join(output_dir, 'templates')
+
+    template_dir = "/home/ohseun/workspace/SAM-6D/SAM-6D/Data/BOP/tless/models_template/obj_000029"
+    # os.path.join(output_dir, '../models_template/')
     num_templates = len(glob.glob(f"{template_dir}/*.npy"))
     boxes, masks, templates = [], [], []
     for idx in range(num_templates):
@@ -136,7 +139,8 @@ def run_inference(segmentor_model, output_dir, cad_path, rgb_path, depth_path, c
         image = image * mask[:, :, None]
         templates.append(image)
         masks.append(mask.unsqueeze(-1))
-        
+
+    # import pdb; pdb.set_trace()
     templates = torch.stack(templates).permute(0, 3, 1, 2)
     masks = torch.stack(masks).permute(0, 3, 1, 2)
     boxes = torch.tensor(np.array(boxes))
@@ -196,19 +200,31 @@ def run_inference(segmentor_model, output_dir, cad_path, rgb_path, depth_path, c
         image_uv, detections, query_appe_descriptors, ref_aux_descriptor, visible_thred=model.visible_thred
         )
 
-    # final score
-    final_score = (semantic_score + appe_scores + geometric_score*visible_ratio) / (1 + 1 + visible_ratio)
+    # final score 계산
+    final_score = (semantic_score + appe_scores + geometric_score * visible_ratio) / (1 + 1 + visible_ratio)
 
     detections.add_attribute("scores", final_score)
     detections.add_attribute("object_ids", torch.zeros_like(final_score))   
-         
+
+    # numpy 변환
     detections.to_numpy()
-    save_path = f"{output_dir}/sam6d_results/detection_ism"
+
+    # 👉 final_score로 상위 5개만 선택
+    scores_np = final_score.cpu().numpy()
+    top5_indices = np.argsort(-scores_np)[:5]  # 내림차순 상위 5개
+
+    # 필터링
+    detections.filter(top5_indices)
+
+    # 저장
+    save_path = f"{output_dir}/sam6d_results/101_detection_ism"
     detections.save_to_file(0, 0, 0, save_path, "Custom", return_results=False)
-    detections = convert_npz_to_json(idx=0, list_npz_paths=[save_path+".npz"])
-    save_json_bop23(save_path+".json", detections)
-    vis_img = visualize(rgb, detections, f"{output_dir}/sam6d_results/vis_ism.png")
-    vis_img.save(f"{output_dir}/sam6d_results/vis_ism.png")
+    detections = convert_npz_to_json(idx=0, list_npz_paths=[save_path + ".npz"])
+    save_json_bop23(save_path + ".json", detections)
+
+    # 시각화
+    vis_img = visualize(rgb, detections, f"{output_dir}/sam6d_results/101_vis_ism.png")
+    vis_img.save(f"{output_dir}/sam6d_results/101_vis_ism.png")
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

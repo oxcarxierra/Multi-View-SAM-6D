@@ -104,13 +104,12 @@ def visualize(rgb, pred_rot, pred_trans, model_points, K, save_path):
     img = Image.fromarray(np.uint8(img))
     img.save(save_path)
     prediction = Image.open(save_path)
-    
-    # concat side by side in PIL
-    rgb = Image.fromarray(np.uint8(rgb))
-    img = np.array(img)
-    concat = Image.new('RGB', (img.shape[1] + prediction.size[0], img.shape[0]))
-    concat.paste(rgb, (0, 0))
-    concat.paste(prediction, (img.shape[1], 0))
+
+    rgb_pil = Image.fromarray(np.uint8(rgb))
+    img_np = np.array(img)
+    concat = Image.new('RGB', (img_np.shape[1] + prediction.size[0], img_np.shape[0]))
+    concat.paste(rgb_pil, (0, 0))
+    concat.paste(prediction, (img_np.shape[1], 0))
     return concat
 
 
@@ -161,7 +160,6 @@ def get_templates(path, cfg):
         all_tem_pts.append(torch.FloatTensor(tem_pts).unsqueeze(0).cuda())
     return all_tem, all_tem_pts, all_tem_choose
 
-
 def get_test_data(rgb_path, depth_path, cam_path, cad_path, seg_path, det_score_thresh, cfg):
     dets = []
     with open(seg_path) as f:
@@ -171,7 +169,7 @@ def get_test_data(rgb_path, depth_path, cam_path, cad_path, seg_path, det_score_
             dets.append(det)
     del dets_
 
-    cam_info = json.load(open(cam_path))
+    cam_info = json.load(open(cam_path))["101"]
     K = np.array(cam_info['cam_K']).reshape(3, 3)
 
     whole_image = load_im(rgb_path).astype(np.uint8)
@@ -190,6 +188,7 @@ def get_test_data(rgb_path, depth_path, cam_path, cad_path, seg_path, det_score_
     all_rgb_choose = []
     all_score = []
     all_dets = []
+
     for inst in dets:
         seg = inst['segmentation']
         score = inst['score']
@@ -252,64 +251,102 @@ def get_test_data(rgb_path, depth_path, cam_path, cad_path, seg_path, det_score_
     ret_dict['K'] = torch.FloatTensor(K).unsqueeze(0).repeat(ninstance, 1, 1).cuda()
     return ret_dict, whole_image, whole_pts.reshape(-1, 3), model_points, all_dets
 
-
-
 if __name__ == "__main__":
     cfg = init()
 
     random.seed(cfg.rd_seed)
     torch.manual_seed(cfg.rd_seed)
 
-    # model
-    print("=> creating model ...")
-    MODEL = importlib.import_module(cfg.model_name)
-    model = MODEL.Net(cfg.model)
-    model = model.cuda()
-    model.eval()
-    checkpoint = os.path.join(os.path.dirname((os.path.abspath(__file__))), 'checkpoints', 'sam-6d-pem-base.pth')
-    gorilla.solver.load_checkpoint(model=model, filename=checkpoint)
-
-    print("=> extracting templates ...")
-    tem_path = os.path.join(cfg.output_dir, 'templates')
-    all_tem, all_tem_pts, all_tem_choose = get_templates(tem_path, cfg.test_dataset)
-    with torch.no_grad():
-        all_tem_pts, all_tem_feat = model.feature_extraction.get_obj_feats(all_tem, all_tem_pts, all_tem_choose)
-
     print("=> loading input data ...")
     input_data, img, whole_pts, model_points, detections = get_test_data(
         cfg.rgb_path, cfg.depth_path, cfg.cam_path, cfg.cad_path, cfg.seg_path, 
         cfg.det_score_thresh, cfg.test_dataset
     )
-    ninstance = input_data['pts'].size(0)
-    
-    print("=> running model ...")
-    with torch.no_grad():
-        input_data['dense_po'] = all_tem_pts.repeat(ninstance,1,1)
-        input_data['dense_fo'] = all_tem_feat.repeat(ninstance,1,1)
-        out = model(input_data)
 
-    if 'pred_pose_score' in out.keys():
-        pose_scores = out['pred_pose_score'] * out['score']
-    else:
-        pose_scores = out['score']
-    pose_scores = pose_scores.detach().cpu().numpy()
-    pred_rot = out['pred_R'].detach().cpu().numpy()
-    pred_trans = out['pred_t'].detach().cpu().numpy() * 1000
+    import torchvision.transforms.functional as TF
+    from torchvision.utils import save_image
 
-    print("=> saving results ...")
-    os.makedirs(f"{cfg.output_dir}/sam6d_results", exist_ok=True)
-    for idx, det in enumerate(detections):
-        detections[idx]['score'] = float(pose_scores[idx])
-        detections[idx]['R'] = list(pred_rot[idx].tolist())
-        detections[idx]['t'] = list(pred_trans[idx].tolist())
+    # score로 정렬할 인덱스 추출
+    scores = input_data['score'].cpu().numpy()
+    print("total proposals: ", len(scores))
+    sorted_indices = np.argsort(-scores)  # 내림차순 정렬
+    # 가장 높은 score 하나만 선택
+    top_idx = sorted_indices[0]
 
-    with open(os.path.join(f"{cfg.output_dir}/sam6d_results", 'detection_pem.json'), "w") as f:
-        json.dump(detections, f)
+    cloud_tensor = input_data['pts'][top_idx]
+    rgb_tensor = input_data['rgb'][top_idx]
+    score = scores[top_idx]
 
-    print("=> visualizating ...")
-    save_path = os.path.join(f"{cfg.output_dir}/sam6d_results", 'vis_pem.png')
-    valid_masks = pose_scores == pose_scores.max()
-    K = input_data['K'].detach().cpu().numpy()[valid_masks]
-    vis_img = visualize(img, pred_rot[valid_masks], pred_trans[valid_masks], model_points*1000, K, save_path)
-    vis_img.save(save_path)
+    # point cloud 저장
+    cloud_np = cloud_tensor.detach().cpu().numpy()
+    np.save(os.path.join(cfg.output_dir, f"sam6d_results/101_score{score:.3f}.npy"), cloud_np)
+
+    # RGB 이미지 저장
+    rgb_img = TF.to_pil_image(rgb_tensor.cpu())
+    rgb_img.save(os.path.join(cfg.output_dir, f"sam6d_results/101_score{score:.3f}.png"))
+
+    if False:
+        # model
+        print("=> creating model ...")
+        MODEL = importlib.import_module(cfg.model_name)
+        model = MODEL.Net(cfg.model)
+        model = model.cuda()
+        model.eval()
+        checkpoint = os.path.join(os.path.dirname((os.path.abspath(__file__))), 'checkpoints', 'sam-6d-pem-base.pth')
+        gorilla.solver.load_checkpoint(model=model, filename=checkpoint)
+
+        print("=> extracting templates ...")
+        # tem_path = os.path.join(cfg.output_dir, 'templates')
+        tem_path = "/home/ohseun/workspace/SAM-6D/SAM-6D/Data/BOP/tless/models_template/obj_000029"
+        all_tem, all_tem_pts, all_tem_choose = get_templates(tem_path, cfg.test_dataset)
+        with torch.no_grad():
+            all_tem_pts, all_tem_feat = model.feature_extraction.get_obj_feats(all_tem, all_tem_pts, all_tem_choose)
+
+        ninstance = input_data['pts'].size(0)
+        
+        print("=> running model ...")
+        with torch.no_grad():
+            input_data['dense_po'] = all_tem_pts.repeat(ninstance,1,1)
+            input_data['dense_fo'] = all_tem_feat.repeat(ninstance,1,1)
+            out = model(input_data)
+
+        if 'pred_pose_score' in out.keys():
+            pose_scores = out['pred_pose_score'] * out['score']
+        else:
+            pose_scores = out['score']
+        pose_scores = pose_scores.detach().cpu().numpy()
+        pred_rot = out['pred_R'].detach().cpu().numpy()
+        pred_trans = out['pred_t'].detach().cpu().numpy() * 1000
+
+        print("=> saving results ...")
+        os.makedirs(f"{cfg.output_dir}/sam6d_results", exist_ok=True)
+        for idx, det in enumerate(detections):
+            detections[idx]['score'] = float(pose_scores[idx])
+            detections[idx]['R'] = list(pred_rot[idx].tolist())
+            detections[idx]['t'] = list(pred_trans[idx].tolist())
+
+        with open(os.path.join(f"{cfg.output_dir}/sam6d_results", 'detection_pem.json'), "w") as f:
+            json.dump(detections, f)
+
+        print("=> visualizating ...")
+        # 정렬된 인덱스
+        sorted_idx = np.argsort(-pose_scores)  # 내림차순
+
+        # 전체 시각화 저장 디렉토리 생성
+        save_dir = os.path.join(cfg.output_dir, "sam6d_results", "vis_pem_all")
+        os.makedirs(save_dir, exist_ok=True)
+
+        for rank, idx in enumerate(sorted_idx):
+            save_path = os.path.join(save_dir, f"vis_pem_rank{rank}_score{pose_scores[idx]:.3f}.png")
+            R = pred_rot[idx]     # shape: (3,3)
+            t = pred_trans[idx]   # shape: (3,)
+            K_ = input_data['K'].detach().cpu().numpy()[idx]  # shape: (3,3)
+
+            vis_img = visualize(img, [R], [t], model_points * 1000, [K_], save_path)
+            vis_img.save(save_path)
+        # save_path = os.path.join(f"{cfg.output_dir}/sam6d_results", 'vis_pem.png')
+        # valid_masks = pose_scores == pose_scores.max()
+        # K = input_data['K'].detach().cpu().numpy()[valid_masks]
+        # vis_img = visualize(img, pred_rot[valid_masks], pred_trans[valid_masks], model_points*1000, K, save_path)
+        # vis_img.save(save_path)
 

@@ -25,6 +25,6 @@ matching_config:
   confidence_thresh: 0.2
 
 onboarding_config:
-  rendering_type: pbr
+  rendering_type: pyrender
   reset_descriptors: False
   level_templates: 0 # 0 is coarse, 1 is medium, 2 is dense

@@ -36,6 +36,9 @@ def run_inference(cfg: DictConfig):
         query_dataloader_config.split = "test"
     query_dataloader_config.root_dir += f"{cfg.dataset_name}"
     query_dataset = instantiate(query_dataloader_config)
+    from torch.utils.data import Subset
+
+    query_dataset = Subset(query_dataset, list(range(100)))  # 안전한 방식
 
     logging.info("Initializing model")
     model = instantiate(cfg.model)
@@ -53,6 +56,7 @@ def run_inference(cfg: DictConfig):
         ref_dataloader_config.template_dir += f"templates_pyrender/{cfg.dataset_name}"
         ref_dataset = instantiate(ref_dataloader_config)
     elif cfg.model.onboarding_config.rendering_type == "pbr":
+        raise NotImplementedError
         logging.info("Using BlenderProc for reference images")
         ref_dataloader_config._target_ = "provider.bop_pbr.BOPTemplatePBR"
         ref_dataloader_config.root_dir = f"{query_dataloader_config.root_dir}"
