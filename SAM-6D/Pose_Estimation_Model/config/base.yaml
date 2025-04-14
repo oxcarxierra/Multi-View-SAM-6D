@@ -38,8 +38,8 @@ model:
     sim_type: cosine
     normalize_feat: True
     loss_dis_thres: 0.15
-    nproposal1: 6000
-    nproposal2: 300
+    nproposal1: 3000 # Due to CUDA memory limit, we set nproposal1 to 3000 instead of 6000.
+    nproposal2: 150 # Due to CUDA memory limit, we set nproposal2 to 150 instead of 300.
   fine_point_matching:
     nblock: 3
     input_dim: 256
@@ -74,8 +74,6 @@ train_dataloader:
   shuffle       : True
   drop_last     : True
   pin_memory    : False
-
-
 
 test_dataset:
   name: bop_test_dataset

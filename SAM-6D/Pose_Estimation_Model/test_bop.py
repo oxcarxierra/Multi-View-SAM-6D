@@ -30,6 +30,10 @@ detetion_paths = {
     'hb': '../Instance_Segmentation_Model/log/sam/result_hb.json'
 }
 
+def print_gpu_memory(stage=""):
+    allocated = torch.cuda.memory_allocated() / 1024 / 1024
+    reserved = torch.cuda.memory_reserved() / 1024 / 1024
+    print(f"[{stage}] GPU Memory - Allocated: {allocated:.2f} MB, Reserved: {reserved:.2f} MB")
 
 def get_parser():
     parser = argparse.ArgumentParser(
@@ -61,7 +65,7 @@ def get_parser():
                         help="iter num. for testing")
     parser.add_argument("--view",
                         type=int,
-                        default=-1,
+                        default=-21,
                         help="view number of templates")
     parser.add_argument("--exp_id",
                         type=int,
@@ -205,6 +209,7 @@ if __name__ == "__main__":
     if len(cfg.gpus)>1:
         model = torch.nn.DataParallel(model, range(len(cfg.gpus.split(","))))
     model = model.cuda()
+    print_gpu_memory(" ========= After model.cuda() ============")
     if cfg.checkpoint_path == 'none':
         checkpoint = os.path.join(cfg.log_dir, 'checkpoint_iter' + str(cfg.test_iter).zfill(6) + '.pth')
     else:
