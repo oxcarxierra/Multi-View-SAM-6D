@@ -21,7 +21,6 @@ from utils.trimesh_utils import depth_image_to_pointcloud_translate_torch
 from utils.poses.pose_utils import get_obj_poses_from_template_level
 from utils.bbox_utils import xyxy_to_xywh, compute_iou
 
-
 class Instance_Segmentation_Model(pl.LightningModule):
     def __init__(
         self,
@@ -322,6 +321,44 @@ class Instance_Segmentation_Model(pl.LightningModule):
         iou = compute_iou(xyxy, proposals.boxes)
 
         return iou, visible_ratio
+    
+    @staticmethod
+    def visualize(rgb, detections, save_path="tmp.png"):
+        import cv2
+        import distinctipy
+        from skimage.feature import canny
+        from skimage.morphology import binary_dilation
+
+        img = rgb.copy()
+        gray = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
+        img = cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
+        colors = distinctipy.get_colors(len(detections.scores))
+        alpha = 0.33
+
+        # numpy 기준 max 인덱스 추출
+        N = len(detections.scores)
+        for i in range(N):
+            mask = detections.masks[i].astype(bool)
+            obj_id = int(detections.object_ids[i])
+            temp_id = obj_id - 1
+            if temp_id < 0 or temp_id >= len(colors):
+                continue
+            r, g, b = [int(255 * c) for c in colors[temp_id]]
+            edge = canny(mask)
+            edge = binary_dilation(edge, np.ones((2, 2)))
+ 
+            img[mask, 0] = alpha * r + (1 - alpha) * img[mask, 0]
+            img[mask, 1] = alpha * g + (1 - alpha) * img[mask, 1]
+            img[mask, 2] = alpha * b + (1 - alpha) * img[mask, 2]
+            img[edge, :] = 255
+
+        img = Image.fromarray(np.uint8(img))
+        img.save(save_path)
+        prediction = Image.open(save_path)
+        concat = Image.new('RGB', (img.size[0] + prediction.size[0], img.size[1]))
+        concat.paste(rgb, (0, 0))
+        concat.paste(prediction, (img.size[0], 0))
+        return concat
 
     def test_step(self, batch, idx):
         if idx == 0:
@@ -426,6 +463,12 @@ class Instance_Segmentation_Model(pl.LightningModule):
             proposal_stage=proposal_stage_end_time - proposal_stage_start_time,
             matching_stage=matching_stage_end_time - matching_stage_start_time,
         )
+
+        # For debugging, render intermediate result 
+        rgb = Image.fromarray(image_np)  # SAM 입력으로 사용된 원본 이미지
+        vis_img = self.visualize(rgb, detections, save_path=f"{self.log_dir}/scene{scene_id}_frame{frame_id}.png")
+        vis_img.save(f"{self.log_dir}/scene{scene_id}_frame{frame_id}.png")
+
         return 0
 
     def test_epoch_end(self, outputs):

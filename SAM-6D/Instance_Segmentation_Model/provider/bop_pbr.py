@@ -188,7 +188,6 @@ class BOPTemplatePBR(BaseBOP):
                 idx_keep = finder.search_nearest_query(obj_poses)
                 # update metaData
                 selected_index.extend(selected_index_obj[idx_keep])
-            import pdb; pdb.set_trace()
             self.metaData = self.metaData.iloc[selected_index]
             logging.info(
                 f"Finish processing metaData from {init_size} to {len(self.metaData)}"

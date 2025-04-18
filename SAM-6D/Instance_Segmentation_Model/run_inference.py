@@ -36,9 +36,9 @@ def run_inference(cfg: DictConfig):
         query_dataloader_config.split = "test"
     query_dataloader_config.root_dir += f"{cfg.dataset_name}"
     query_dataset = instantiate(query_dataloader_config)
-    from torch.utils.data import Subset
-
-    query_dataset = Subset(query_dataset, list(range(100)))  # 안전한 방식
+    
+    # from torch.utils.data import Subset
+    # query_dataset = Subset(query_dataset, list(range(100)))  # 안전한 방식
 
     logging.info("Initializing model")
     model = instantiate(cfg.model)
