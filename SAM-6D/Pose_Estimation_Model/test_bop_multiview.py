@@ -124,11 +124,12 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
 
     lines = []
     with tqdm(total=len(dataloder)) as t:
-        multiview_data = []
+        coarse_endpoints = []
         pred_Rs = []
         pred_Ts = []
         pred_scores = []
         for i, data in enumerate(dataloder):
+            print("=====================> Processing {}th data".format(i))
             # data = dict_keys(['pts', 'rgb', 'rgb_choose', 'obj', 'model', 'obj_id', 'score', 'scene_id', 'img_id', 'seg_time']) -> for same scene & image show all proposals
             torch.cuda.synchronize()
             end = time.time()
@@ -153,140 +154,120 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
 
                 # make predictions
                 with torch.no_grad():
-                    end_points = model.coarse_point_matching_forward(inputs)
+                    end_points, _, _, _, _, _ = model.singleview_coarse_point_matching(inputs)
                     # end_points = dict_keys(['pts', 'rgb', 'rgb_choose', 'model', 'dense_po', 'dense_fo', 'init_R', 'init_t'])
 
-                coarse_result = {
-                    'data': data,
-                    'init_R': end_points['init_R'], # [n_instance, 3, 3]
-                    'init_t': end_points['init_t'], # [n_instance, 3]
-                }
-
-                multiview_data.append(coarse_result)
+                coarse_endpoints.append(end_points)
                 # merge pointclouds by batch
 
-                if len(multiview_data) == cfg.multi_view_count:
+                if len(coarse_endpoints) != cfg.multi_view_count:
+                    continue    
+
+                print(f"=====================> Multiview estimation with {len(coarse_endpoints)} images")
+                from collections import defaultdict
+
+                count_by_obj = defaultdict(int)
+                for singleview_data in coarse_endpoints:
                     import pdb; pdb.set_trace()
-                    # merge pointclouds
-                    merged_results, _, _, _ = merge_pointclouds(multiview_data)
+                    obj_ids = set(singleview_data['data']['obj_id'][0].tolist())
+                    for obj_id in obj_ids:
+                        count_by_obj[obj_id] += 1
 
-                    for merged_pc, obj_id, K_list, T_w2c_list in merged_results:
-                        # TODO we need to fix this
-                        inputs = {
-                            'pts': merged_pc,
-                            'model': torch.tensor([obj_id], dtype=torch.long).cuda(),
-                            'dense_po': dense_po[obj_id].unsqueeze(0),
-                            'dense_fo': dense_fo[obj_id].unsqueeze(0),
-                        }
+                valid_obj_ids = [obj_id for obj_id, count in count_by_obj.items() if count == len(coarse_endpoints)]
 
-                        with torch.no_grad():
-                            end_points = model.multiview_finepoint_matching_forward(inputs)
+                print(f"Found {len(valid_obj_ids)} objects - {valid_obj_ids}")
 
-                        R_final = end_points['final_R'][0]  # (3, 3)
-                        t_final = end_points['final_t'][0]  # (3,)
+                for obj_id in valid_obj_ids:
+                    merged_pts_list = []
+                    merged_rgb_list = []
+                    merged_rgb_choose_list = []
+                    T_w2c_list = []
+                    init_R_list = []
+                    init_t_list = []
 
-                        # Inverse transform to each camera's frame
-                        for i, entry in enumerate(multiview_data):
-                            data = entry['data']
-                            T_w2c = T_w2c_list[i]  # (4, 4)
-                            cam_R_w2c = T_w2c[:3, :3]  # (3, 3)
-                            cam_t_w2c = T_w2c[:3, 3]  # (3,)
+                    for singleview_data in coarse_endpoints:
+                        data = singleview_data['data']
+                        obj_ids = data['obj_id'][0].tolist()
 
-                            # TODO fix here
-                            # world to camera: X_cam = R_cam * (R_final * X + t_final) + t_cam
-                            # R_img = R_cam @ R_final
-                            # t_img = R_cam @ t_final + t_cam
+                        indices = [i for i, oid in enumerate(obj_ids) if oid == obj_id]
+                        if not indices:
+                            continue
+                        scores = data['score'][0][indices]
+                        best_idx = indices[torch.argmax(scores).item()]
 
-                            scene_id = data['scene_id'].item()
-                            img_id = data['img_id'].item()
-                            line = ','.join((
-                                str(scene_id),
-                                str(img_id),
-                                str(obj_id),
-                                str(1.0),  # dummy score
-                                ' '.join((str(v) for v in R_img.flatten().tolist())),
-                                ' '.join((str(v * 1000) for v in t_img.tolist())),
-                                '0.0\n'
-                            ))
-                            lines.append(line)
+                        pts = data['pts'][0][best_idx]
+                        rgb = data['rgb'][0][best_idx]
+                        rgb_choose = data['rgb_choose'][0][best_idx]
+                        cam_R_w2c = data['cam_R_w2c'][0]
+                        cam_t_w2c = data['cam_t_w2c'][0]
 
-            t.set_description(
-                "Test [{}/{}]".format(i+1, len(dataloder))
-            )
-            t.update(1)
+                        T_w2c = torch.eye(4).cuda()
+                        T_w2c[:3, :3] = cam_R_w2c
+                        T_w2c[:3, 3] = cam_t_w2c
+                        T_c2w = torch.inverse(T_w2c)
 
-    with open(save_path, 'w+') as f:
-        f.writelines(lines)
+                        R_c2w = T_c2w[:3, :3]
+                        t_c2w = T_c2w[:3, 3]
 
-def merge_pointclouds(multiview_data): 
-    # How to select same object from different views? 
-    # Assume all objects are different, so we can just use the object id to match them.
-    from collections import defaultdict
+                        pts_world = (R_c2w @ pts.T + t_c2w.unsqueeze(-1)).T
 
-    merged_results = []
-    count_by_obj = defaultdict(int)
-    num_points = multiview_data[0]['data']['pts'][0].shape[0]  # Number of points in the first view
+                        merged_pts_list.append(pts_world)
+                        merged_rgb_list.append(rgb)
+                        merged_rgb_choose_list.append(rgb_choose)
+                        T_w2c_list.append(T_w2c)
 
-    # 1. Count unique obj_ids per view to avoid duplicate counting
-    for singleview_data in multiview_data:
-        obj_ids = set(singleview_data['data']['obj_id'][0].tolist())
-        for obj_id in obj_ids:
-            count_by_obj[obj_id] += 1
+                    if not merged_pts_list:
+                        continue
 
-    # 2. Filter obj_ids that appear in all views
-    valid_obj_ids = [obj_id for obj_id, count in count_by_obj.items() if count == len(multiview_data)]
+                    merged_pts = torch.cat(merged_pts_list, dim=0).unsqueeze(0)
+                    merged_rgb = torch.cat(merged_rgb_list, dim=0).unsqueeze(0)
+                    merged_rgb_choose = torch.cat(merged_rgb_choose_list, dim=0).unsqueeze(0)
 
-    # 3. Iterate through each valid obj_id and merge point clouds
-    for obj_id in valid_obj_ids:
-        pts_list = []
-        K_list = []
-        T_w2c_list = []
+                    # Random sampling
+                    total_points = merged_pts.shape[1]
+                    sampled_idx = torch.randperm(total_points)[:total_points // cfg.multi_view_count]
+                    merged_pts = merged_pts[:, sampled_idx]
+                    merged_rgb = merged_rgb[:, sampled_idx]
+                    merged_rgb_choose = merged_rgb_choose[:, sampled_idx]
 
-        for singleview_data in multiview_data:
-            data = singleview_data['data']
-            obj_ids = data['obj_id'][0].tolist()
+                    # Prepare inputs
+                    inputs = {
+                        'pts': merged_pts,
+                        'rgb': merged_rgb,
+                        'rgb_choose': merged_rgb_choose,
+                        'model': torch.tensor([obj_id], dtype=torch.long).cuda(),
+                        'dense_po': coarse_endpoints[0]['dense_po'][0].unsqueeze(0),
+                        'dense_fo': coarse_endpoints[0]['dense_fo'][0].unsqueeze(0),
+                    }
 
-            if obj_id not in obj_ids:
-                continue
+                    with torch.no_grad():
+                        end_points = model.multiview_fine_point_matching(inputs)
 
-            # Find all indices where obj_id matches
-            indices = [i for i, oid in enumerate(obj_ids) if oid == obj_id]
-            scores = data['score'][0][indices]
-            best_idx = indices[torch.argmax(scores).item()]
+                    R_final = end_points['final_R'][0]
+                    t_final = end_points['final_t'][0]
 
-            R_init = singleview_data['init_R'][0][best_idx]
-            t_init = singleview_data['init_t'][0][best_idx]
-            pts = data['pts'][0][best_idx]
-            pts = pts.unsqueeze(0) if pts.ndim == 1 else pts  # ensure shape (N, 3)
+                    # Inverse transform to each camera's frame
+                    for i, T_w2c in enumerate(T_w2c_list):
+                        cam_R_w2c = T_w2c[:3, :3]
+                        cam_t_w2c = T_w2c[:3, 3]
 
-            K = data['cam_K'][0]
-            cam_R_w2c = data['cam_R_w2c'][0]
-            cam_t_w2c = data['cam_t_w2c'][0]
+                        R_img = cam_R_w2c @ R_final
+                        t_img = cam_R_w2c @ t_final + cam_t_w2c
 
-            # World-frame 변환
-            T_w2c = torch.cat((cam_R_w2c, cam_t_w2c), dim=1)  # (3, 4)
-            T_w2c = torch.cat((T_w2c, torch.tensor([[0, 0, 0, 1]], dtype=torch.float32).cuda()), dim=0)
-            T_c2w = torch.inverse(T_w2c)
-            R_c2w = T_c2w[:3, :3]
-            t_c2w = T_c2w[:3, 3]
+                        scene_id = coarse_endpoints[i]['data']['scene_id'].item()
+                        img_id = coarse_endpoints[i]['data']['img_id'].item()
+                        line = ','.join((
+                            str(scene_id),
+                            str(img_id),
+                            str(obj_id),
+                            str(1.0),
+                            ' '.join((str(v) for v in R_img.flatten().tolist())),
+                            ' '.join((str(v * 1000) for v in t_img.tolist())),
+                            '0.0\n'
+                        ))
+                        lines.append(line)
 
-            # init R, t 적용 → camera frame → world frame
-            # transformed_pts = (R_init @ pts.T + t_init.unsqueeze(-1)).T  # (N, 3)
-            pts_base_frame = (R_c2w @ pts.T + t_c2w.unsqueeze(-1)).T  # (N, 3)
-
-            pts_list.append(pts_base_frame)
-            K_list.append(K)
-            T_w2c_list.append(T_w2c)
-
-        if pts_list:
-            # Merge all points first
-            merged_pc = torch.cat(pts_list, dim=0)
-            indices = torch.randperm(merged_pc.shape[0])[:num_points]
-            merged_pc = merged_pc[indices]
-            merged_pc = merged_pc.unsqueeze(0)  # (1, num_points, 3)
-            merged_results.append((merged_pc, obj_id, K_list, T_w2c_list))
-
-    return merged_results, pc_list, K_list, T_w2c_list
+                coarse_endpoints.clear()  # Reset buffer after multiview processing
 
 if __name__ == "__main__":
     cfg = init()
