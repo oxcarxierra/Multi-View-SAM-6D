@@ -21,6 +21,13 @@ class Net(nn.Module):
         self.fine_point_matching = FinePointMatching(cfg.fine_point_matching)
 
     def forward(self, end_points):
+        # end_points = dict_keys(['pts', 'rgb', 'rgb_choose', 'model', 'dense_po', 'dense_fo'])
+        # end_points['pts'].shape = torch.Size([7, 2048, 3])
+        # end_points['rgb'].shape = torch.Size([7, 3, 224, 224])
+        # end_points['rgb_choose'].shape = torch.Size([7, 2048])
+        # end_points['model'].shape = torch.Size([7, 1024, 3])
+        # end_points['dense_po'].shape = torch.Size([7, 2048, 3])
+        # end_points['dense_fo'].shape = torch.Size([7, 2048, 256])
         dense_pm, dense_fm, dense_po, dense_fo, radius = self.feature_extraction(end_points)
 
         # pre-compute geometric embeddings for geometric transformer
@@ -42,13 +49,17 @@ class Net(nn.Module):
             sparse_po, sparse_fo, geo_embedding_o,
             radius, end_points,
         )
-
+        # end_poins = dict_keys(['pts', 'rgb', 'rgb_choose', 'model', 'dense_po', 'dense_fo', 'init_R', 'init_t'])
+        # end_points['init_R'].shape = torch.Size([7, 3, 3])
+        # end_points['init_t'].shape = torch.Size([7, 3])
         # fine_point_matching
         end_points = self.fine_point_matching(
             dense_pm, dense_fm, geo_embedding_m, fps_idx_m,
             dense_po, dense_fo, geo_embedding_o, fps_idx_o,
             radius, end_points
         )
-
+        # end_points['pred_R'].shape = torch.Size([7, 3, 3])
+        # end_points['pred_t'].shape = torch.Size([7, 3])
+        # end_points['pred_pose_score'].shape = torch.Size([7])
         return end_points
 

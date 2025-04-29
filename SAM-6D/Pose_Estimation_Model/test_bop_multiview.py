@@ -124,10 +124,7 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
 
     lines = []
     with tqdm(total=len(dataloder)) as t:
-        coarse_endpoints = []
-        pred_Rs = []
-        pred_Ts = []
-        pred_scores = []
+        multiview_datas = []
         for i, data in enumerate(dataloder):
             print("=====================> Processing {}th data".format(i))
             # data = dict_keys(['pts', 'rgb', 'rgb_choose', 'obj', 'model', 'obj_id', 'score', 'scene_id', 'img_id', 'seg_time']) -> for same scene & image show all proposals
@@ -136,138 +133,170 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
 
             for key in data:
                 data[key] = data[key].cuda()
-            n_instance = data['pts'].size(1)
-            n_batch = int(np.ceil(n_instance/bs))
-            for j in range(n_batch):
-                start_idx = j * bs
-                end_idx = n_instance if j == n_batch-1 else (j+1) * bs
-                obj = data['obj'][0][start_idx:end_idx].reshape(-1)
 
-                # process inputs
-                inputs = {}
-                inputs['pts'] = data['pts'][0][start_idx:end_idx].contiguous()
-                inputs['rgb'] = data['rgb'][0][start_idx:end_idx].contiguous()
-                inputs['rgb_choose'] = data['rgb_choose'][0][start_idx:end_idx].contiguous()
-                inputs['model'] = data['model'][0][start_idx:end_idx].contiguous()
-                inputs['dense_po'] = dense_po[obj].contiguous()
-                inputs['dense_fo'] = dense_fo[obj].contiguous()
+            # Commented batch processing
+            # n_instance = data['pts'].size(1)
+            # n_batch = int(np.ceil(n_instance/bs))
+            # for j in range(n_batch): 
+            # start_idx = j * bs
+            # end_idx = n_instance if j == n_batch-1 else (j+1) * bs
+            # obj = data['obj'][0][start_idx:end_idx].reshape(-1)
 
-                # make predictions
-                with torch.no_grad():
-                    end_points, _, _, _, _, _ = model.singleview_coarse_point_matching(inputs)
-                    # end_points = dict_keys(['pts', 'rgb', 'rgb_choose', 'model', 'dense_po', 'dense_fo', 'init_R', 'init_t'])
+            start_idx = 0
+            end_idx = data['pts'].size(1)
+            obj = data['obj'][0][start_idx:end_idx].reshape(-1)
+            # process inputs
+            inputs = {}
+            inputs['pts'] = data['pts'][0][start_idx:end_idx].contiguous()
+            inputs['rgb'] = data['rgb'][0][start_idx:end_idx].contiguous()
+            inputs['rgb_choose'] = data['rgb_choose'][0][start_idx:end_idx].contiguous()
+            inputs['model'] = data['model'][0][start_idx:end_idx].contiguous()
+            inputs['dense_po'] = dense_po[obj].contiguous()
+            inputs['dense_fo'] = dense_fo[obj].contiguous()
 
-                coarse_endpoints.append(end_points)
-                # merge pointclouds by batch
+            # make predictions
+            with torch.no_grad():
+                end_points, fps_idx_m, fps_idx_o = model.singleview_coarse_point_matching(inputs)
+                # end_points = dict_keys(['pts', 'rgb', 'rgb_choose', 'model', 'dense_po', 'dense_fo', 'init_R', 'init_t'])
 
-                if len(coarse_endpoints) != cfg.multi_view_count:
-                    continue    
+            single_image_proposals = []
+            for p in range(len(data['pts'][0])):
+                proposal = {}
+                for key in data:
+                    if key in ['pts', 'rgb', 'rgb_choose', 'obj', 'model', 'obj_id', 'score', 'cam_R_w2c', 'cam_t_w2c']:
+                        proposal[key] = data[key][0][p]
+                    else:
+                        proposal[key] = data[key][0]  # just take [0] for image-level data
+                for key in end_points:
+                    proposal[key] = end_points[key][p]
+                proposal['fps_idx_m'] = fps_idx_m[p]
+                proposal['fps_idx_o'] = fps_idx_o[p]
+                single_image_proposals.append(proposal)
 
-                print(f"=====================> Multiview estimation with {len(coarse_endpoints)} images")
-                from collections import defaultdict
+            multiview_datas.append(single_image_proposals)
+            # multiview_datas = [[proposal1, proposal2, ...], [proposal1, proposal2, ...], ...]
+            # proposal is a object with key ['pts', 'rgb', 'rgb_choose', 'obj', 'model', 'obj_id', 'score', 'cam_K', 'cam_R_w2c', 'cam_t_w2c', 'scene_id', 'img_id', 'seg_time', 'dense_po', 'dense_fo', 'init_R', 'init_t']
 
-                count_by_obj = defaultdict(int)
-                for singleview_data in coarse_endpoints:
-                    import pdb; pdb.set_trace()
-                    obj_ids = set(singleview_data['data']['obj_id'][0].tolist())
-                    for obj_id in obj_ids:
-                        count_by_obj[obj_id] += 1
+            if len(multiview_datas) != cfg.multi_view_count:
+                continue    
 
-                valid_obj_ids = [obj_id for obj_id, count in count_by_obj.items() if count == len(coarse_endpoints)]
+            print(f"=====================> Multiview estimation with {len(multiview_datas)} images")
+            all_proposals = sum(multiview_datas, [])  # flatten
+            ## Step 1 : Match the objects in multiview images
 
-                print(f"Found {len(valid_obj_ids)} objects - {valid_obj_ids}")
+            # Sum scores for each obj_id
+            obj_score_sum = {}
+            for proposal in all_proposals:
+                obj_id = proposal['obj_id'].item()
+                score = proposal['score'].item()
+                obj_score_sum[obj_id] = obj_score_sum.get(obj_id, 0) + score
 
-                for obj_id in valid_obj_ids:
-                    merged_pts_list = []
-                    merged_rgb_list = []
-                    merged_rgb_choose_list = []
-                    T_w2c_list = []
-                    init_R_list = []
-                    init_t_list = []
+            # top 4 object ids with highest scores - need to be changed
+            top_obj_ids = sorted(obj_score_sum.items(), key= lambda x: x[1], reverse=True)[:4] 
+            top_obj_ids = [obj_id for obj_id, _ in top_obj_ids]
 
-                    for singleview_data in coarse_endpoints:
-                        data = singleview_data['data']
-                        obj_ids = data['obj_id'][0].tolist()
+            print(f"Found {len(top_obj_ids)} objects - {top_obj_ids}")
+            print(obj_score_sum)
+            
+            for obj_id in top_obj_ids:
+                proposals_for_obj = [p for p in all_proposals if p['obj_id'].item() == obj_id]
+                if not proposals_for_obj:
+                    continue
+                best_proposal = max(proposals_for_obj, key=lambda p: p['score'].item())
 
-                        indices = [i for i, oid in enumerate(obj_ids) if oid == obj_id]
-                        if not indices:
-                            continue
-                        scores = data['score'][0][indices]
-                        best_idx = indices[torch.argmax(scores).item()]
+                merged_pts_list = []
+                T_w2c_list = []
 
-                        pts = data['pts'][0][best_idx]
-                        rgb = data['rgb'][0][best_idx]
-                        rgb_choose = data['rgb_choose'][0][best_idx]
-                        cam_R_w2c = data['cam_R_w2c'][0]
-                        cam_t_w2c = data['cam_t_w2c'][0]
-
-                        T_w2c = torch.eye(4).cuda()
-                        T_w2c[:3, :3] = cam_R_w2c
-                        T_w2c[:3, 3] = cam_t_w2c
-                        T_c2w = torch.inverse(T_w2c)
-
-                        R_c2w = T_c2w[:3, :3]
-                        t_c2w = T_c2w[:3, 3]
-
-                        pts_world = (R_c2w @ pts.T + t_c2w.unsqueeze(-1)).T
-
-                        merged_pts_list.append(pts_world)
-                        merged_rgb_list.append(rgb)
-                        merged_rgb_choose_list.append(rgb_choose)
-                        T_w2c_list.append(T_w2c)
-
-                    if not merged_pts_list:
+                for view_proposals in multiview_datas:
+                    proposals_in_view = [p for p in view_proposals if p['obj_id'].item() == obj_id]
+                    if not proposals_in_view:
                         continue
+                    best_in_view = max(proposals_in_view, key=lambda p: p['score'].item())
+                    
+                    pts = best_in_view['pts']
+                    R_w2c = best_in_view['cam_R_w2c'].squeeze(0)
+                    t_w2c = best_in_view['cam_t_w2c'].squeeze(0) / 1000.0
+                    R_c2w = R_w2c.T
+                    t_c2w = -R_c2w @ t_w2c.view(3, 1)
 
-                    merged_pts = torch.cat(merged_pts_list, dim=0).unsqueeze(0)
-                    merged_rgb = torch.cat(merged_rgb_list, dim=0).unsqueeze(0)
-                    merged_rgb_choose = torch.cat(merged_rgb_choose_list, dim=0).unsqueeze(0)
+                    pts_world = (R_c2w @ pts.T + t_c2w).T
 
-                    # Random sampling
-                    total_points = merged_pts.shape[1]
-                    sampled_idx = torch.randperm(total_points)[:total_points // cfg.multi_view_count]
-                    merged_pts = merged_pts[:, sampled_idx]
-                    merged_rgb = merged_rgb[:, sampled_idx]
-                    merged_rgb_choose = merged_rgb_choose[:, sampled_idx]
+                    # Export merged_pts as .npy file
+                    obj_save_path = os.path.join(save_path,'individual_pcls',f"img_{best_in_view['img_id'].item()}_obj_{obj_id}.npy")
+                    np.save(obj_save_path.replace('/result_tless.csv',''), pts_world.cpu().numpy())
 
-                    # Prepare inputs
-                    inputs = {
-                        'pts': merged_pts,
-                        'rgb': merged_rgb,
-                        'rgb_choose': merged_rgb_choose,
-                        'model': torch.tensor([obj_id], dtype=torch.long).cuda(),
-                        'dense_po': coarse_endpoints[0]['dense_po'][0].unsqueeze(0),
-                        'dense_fo': coarse_endpoints[0]['dense_fo'][0].unsqueeze(0),
-                    }
+                    merged_pts_list.append(pts_world)
+                    T_w2c_list.append(t_w2c)
 
-                    with torch.no_grad():
-                        end_points = model.multiview_fine_point_matching(inputs)
+                if not merged_pts_list:
+                    continue
 
-                    R_final = end_points['final_R'][0]
-                    t_final = end_points['final_t'][0]
+                merged_pts = torch.cat(merged_pts_list, dim=0)  # (N*2048, 3)
+                total_points = merged_pts.shape[0]
+                sampled_idx = torch.randperm(total_points)[:2048]
+                merged_pts = merged_pts[sampled_idx].unsqueeze(0)  # (1, 2048, 3)
 
-                    # Inverse transform to each camera's frame
-                    for i, T_w2c in enumerate(T_w2c_list):
-                        cam_R_w2c = T_w2c[:3, :3]
-                        cam_t_w2c = T_w2c[:3, 3]
+                # initial pose proposals to world frame
+                import pdb; pdb.set_trace()
+                best_proposal_R_w2c = best_proposal['cam_R_w2c'].squeeze(0)
+                best_proposal_t_w2c = best_proposal['cam_t_w2c'].squeeze(0) / 1000.0
+                best_proposal_R_c2w = best_proposal_R_w2c.T
+                best_proposal_t_c2w = -best_proposal_R_w2c @ best_proposal_t_w2c.view(3, 1)
+                init_R_world = best_proposal_R_c2w @ best_proposal['init_R']
+                init_t_world = (best_proposal_R_c2w @ best_proposal['init_t'].view(3, 1) + best_proposal_t_c2w).view(-1)
 
-                        R_img = cam_R_w2c @ R_final
-                        t_img = cam_R_w2c @ t_final + cam_t_w2c
+                inputs = {
+                    'pts': merged_pts,
+                    'rgb': best_proposal['rgb'].unsqueeze(0),
+                    'rgb_choose': best_proposal['rgb_choose'].unsqueeze(0),
+                    'model': best_proposal['model'].unsqueeze(0),
+                    'dense_po': best_proposal['dense_po'].unsqueeze(0),
+                    'dense_fo': best_proposal['dense_fo'].unsqueeze(0),
+                    'init_R': init_R_world.unsqueeze(0),
+                    'init_t': init_t_world.unsqueeze(0),
+                }
 
-                        scene_id = coarse_endpoints[i]['data']['scene_id'].item()
-                        img_id = coarse_endpoints[i]['data']['img_id'].item()
-                        line = ','.join((
-                            str(scene_id),
-                            str(img_id),
-                            str(obj_id),
-                            str(1.0),
-                            ' '.join((str(v) for v in R_img.flatten().tolist())),
-                            ' '.join((str(v * 1000) for v in t_img.tolist())),
-                            '0.0\n'
-                        ))
-                        lines.append(line)
+                # Export merged_pts as .npy file
+                obj_save_path = os.path.join(save_path, 'merged_pcls', f"merged_{multiview_datas[0][0]['img_id'].item()}-{multiview_datas[-1][0]['img_id'].item()}_obj_{obj_id}.npy")
+                np.save(obj_save_path.replace('/result_tless.csv',''), merged_pts[0].cpu().numpy())
 
-                coarse_endpoints.clear()  # Reset buffer after multiview processing
+                fps_idx_m = best_proposal['fps_idx_m'].unsqueeze(0)
+                fps_idx_o = best_proposal['fps_idx_o'].unsqueeze(0)
+
+                with torch.no_grad():
+                    end_points = model.multiview_fine_point_matching(inputs, fps_idx_m, fps_idx_o)
+
+                R_final = end_points['pred_R'][0]
+                t_final = end_points['pred_t'][0]
+                print(f"Prediction score is : {end_points['pred_pose_score'][0]}")
+
+                # Write results : inverse transform to each camera's frame
+
+                # for j, T_w2c in enumerate(T_w2c_list):
+                #     cam_R_w2c = T_w2c[:3, :3]
+                #     cam_t_w2c = T_w2c[:3, 3]
+
+                #     R_img = cam_R_w2c @ R_final
+                #     t_img = cam_R_w2c @ t_final + cam_t_w2c
+
+                #     scene_id = multiview_datas[j][0]['scene_id'].item()
+                #     img_id = multiview_datas[j][0]['img_id'].item()
+                #     obj_id = multiview_datas[j][0]['obj_id'].item()
+                #     line = ','.join((
+                #         str(scene_id),
+                #         str(img_id),
+                #         str(obj_id),
+                #         str(1.0),
+                #         ' '.join((str(v) for v in R_img.flatten().tolist())),
+                #         ' '.join((str(v * 1000) for v in t_img.tolist())),
+                #         '0.0\n'
+                #     ))
+                #     lines.append(line)
+
+            multiview_datas.clear()  # Reset buffer after multiview processing
+            import pdb; pdb.set_trace()
+    with open(save_path, 'w+') as f:
+        f.writelines(lines)
 
 if __name__ == "__main__":
     cfg = init()
