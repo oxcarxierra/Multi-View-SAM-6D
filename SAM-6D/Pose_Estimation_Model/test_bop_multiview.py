@@ -142,22 +142,23 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
             # end_idx = n_instance if j == n_batch-1 else (j+1) * bs
             # obj = data['obj'][0][start_idx:end_idx].reshape(-1)
 
-            start_idx = 0
-            end_idx = data['pts'].size(1)
-            obj = data['obj'][0][start_idx:end_idx].reshape(-1)
-            # process inputs
-            inputs = {}
-            inputs['pts'] = data['pts'][0][start_idx:end_idx].contiguous()
-            inputs['rgb'] = data['rgb'][0][start_idx:end_idx].contiguous()
-            inputs['rgb_choose'] = data['rgb_choose'][0][start_idx:end_idx].contiguous()
-            inputs['model'] = data['model'][0][start_idx:end_idx].contiguous()
-            inputs['dense_po'] = dense_po[obj].contiguous()
-            inputs['dense_fo'] = dense_fo[obj].contiguous()
+            # start_idx = 0
+            # end_idx = data['pts'].size(1)
+            # obj = data['obj'][0][start_idx:end_idx].reshape(-1)
+            # import pdb; pdb.set_trace()
+            # # process inputs
+            # inputs = {}
+            # inputs['pts'] = data['pts'][0][start_idx:end_idx].contiguous()
+            # inputs['rgb'] = data['rgb'][0][start_idx:end_idx].contiguous()
+            # inputs['rgb_choose'] = data['rgb_choose'][0][start_idx:end_idx].contiguous()
+            # inputs['model'] = data['model'][0][start_idx:end_idx].contiguous()
+            # inputs['dense_po'] = dense_po[obj].contiguous()
+            # inputs['dense_fo'] = dense_fo[obj].contiguous()
 
             # make predictions
-            with torch.no_grad():
-                end_points, fps_idx_m, fps_idx_o = model.singleview_coarse_point_matching(inputs)
-                # end_points = dict_keys(['pts', 'rgb', 'rgb_choose', 'model', 'dense_po', 'dense_fo', 'init_R', 'init_t'])
+            # with torch.no_grad():
+            #     end_points, fps_idx_m, fps_idx_o = model.singleview_coarse_point_matching(inputs)
+            # end_points = dict_keys(['pts', 'rgb', 'rgb_choose', 'model', 'dense_po', 'dense_fo', 'init_R', 'init_t'])
 
             single_image_proposals = []
             for p in range(len(data['pts'][0])):
@@ -167,10 +168,8 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                         proposal[key] = data[key][0][p]
                     else:
                         proposal[key] = data[key][0]  # just take [0] for image-level data
-                for key in end_points:
-                    proposal[key] = end_points[key][p]
-                proposal['fps_idx_m'] = fps_idx_m[p]
-                proposal['fps_idx_o'] = fps_idx_o[p]
+                # for key in end_points:
+                #     proposal[key] = end_points[key][p]
                 single_image_proposals.append(proposal)
 
             multiview_datas.append(single_image_proposals)
@@ -183,7 +182,7 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
             print(f"=====================> Multiview estimation with {len(multiview_datas)} images")
             all_proposals = sum(multiview_datas, [])  # flatten
             ## Step 1 : Match the objects in multiview images
-
+            # top 4 object ids with highest scores - need to be changed
             # Sum scores for each obj_id
             obj_score_sum = {}
             for proposal in all_proposals:
@@ -191,13 +190,13 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                 score = proposal['score'].item()
                 obj_score_sum[obj_id] = obj_score_sum.get(obj_id, 0) + score
 
-            # top 4 object ids with highest scores - need to be changed
             top_obj_ids = sorted(obj_score_sum.items(), key= lambda x: x[1], reverse=True)[:4] 
             top_obj_ids = [obj_id for obj_id, _ in top_obj_ids]
 
             print(f"Found {len(top_obj_ids)} objects - {top_obj_ids}")
             print(obj_score_sum)
             
+            ## Step 2 : Inference multiview pose estimation for each objects with best ID
             for obj_id in top_obj_ids:
                 proposals_for_obj = [p for p in all_proposals if p['obj_id'].item() == obj_id]
                 if not proposals_for_obj:
@@ -205,14 +204,15 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                 best_proposal = max(proposals_for_obj, key=lambda p: p['score'].item())
 
                 merged_pts_list = []
-                T_w2c_list = []
+                R_w2c_list = []
+                t_w2c_list = []
 
                 for view_proposals in multiview_datas:
                     proposals_in_view = [p for p in view_proposals if p['obj_id'].item() == obj_id]
                     if not proposals_in_view:
                         continue
                     best_in_view = max(proposals_in_view, key=lambda p: p['score'].item())
-                    
+
                     pts = best_in_view['pts']
                     R_w2c = best_in_view['cam_R_w2c'].squeeze(0)
                     t_w2c = best_in_view['cam_t_w2c'].squeeze(0) / 1000.0
@@ -226,7 +226,8 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                     np.save(obj_save_path.replace('/result_tless.csv',''), pts_world.cpu().numpy())
 
                     merged_pts_list.append(pts_world)
-                    T_w2c_list.append(t_w2c)
+                    R_w2c_list.append(R_w2c)
+                    t_w2c_list.append(t_w2c)
 
                 if not merged_pts_list:
                     continue
@@ -237,64 +238,65 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                 merged_pts = merged_pts[sampled_idx].unsqueeze(0)  # (1, 2048, 3)
 
                 # initial pose proposals to world frame
-                import pdb; pdb.set_trace()
-                best_proposal_R_w2c = best_proposal['cam_R_w2c'].squeeze(0)
-                best_proposal_t_w2c = best_proposal['cam_t_w2c'].squeeze(0) / 1000.0
-                best_proposal_R_c2w = best_proposal_R_w2c.T
-                best_proposal_t_c2w = -best_proposal_R_w2c @ best_proposal_t_w2c.view(3, 1)
-                init_R_world = best_proposal_R_c2w @ best_proposal['init_R']
-                init_t_world = (best_proposal_R_c2w @ best_proposal['init_t'].view(3, 1) + best_proposal_t_c2w).view(-1)
-
+                # import pdb; pdb.set_trace()
+                # best_proposal_R_w2c = best_proposal['cam_R_w2c'].squeeze(0)
+                # best_proposal_t_w2c = best_proposal['cam_t_w2c'].squeeze(0) / 1000.0
+                # best_proposal_R_c2w = best_proposal_R_w2c.T
+                # best_proposal_t_c2w = -best_proposal_R_w2c @ best_proposal_t_w2c.view(3, 1)
+                # init_R_world = best_proposal_R_c2w @ best_proposal['init_R']
+                # init_t_world = (best_proposal_R_c2w @ best_proposal['init_t'].view(3, 1) + best_proposal_t_c2w).view(-1)
+                obj = best_proposal['obj'][0].item()
                 inputs = {
                     'pts': merged_pts,
                     'rgb': best_proposal['rgb'].unsqueeze(0),
                     'rgb_choose': best_proposal['rgb_choose'].unsqueeze(0),
                     'model': best_proposal['model'].unsqueeze(0),
-                    'dense_po': best_proposal['dense_po'].unsqueeze(0),
-                    'dense_fo': best_proposal['dense_fo'].unsqueeze(0),
-                    'init_R': init_R_world.unsqueeze(0),
-                    'init_t': init_t_world.unsqueeze(0),
+                    'dense_po': dense_po[obj].unsqueeze(0),
+                    'dense_fo': dense_fo[obj].unsqueeze(0)
                 }
 
                 # Export merged_pts as .npy file
                 obj_save_path = os.path.join(save_path, 'merged_pcls', f"merged_{multiview_datas[0][0]['img_id'].item()}-{multiview_datas[-1][0]['img_id'].item()}_obj_{obj_id}.npy")
                 np.save(obj_save_path.replace('/result_tless.csv',''), merged_pts[0].cpu().numpy())
 
-                fps_idx_m = best_proposal['fps_idx_m'].unsqueeze(0)
-                fps_idx_o = best_proposal['fps_idx_o'].unsqueeze(0)
-
                 with torch.no_grad():
-                    end_points = model.multiview_fine_point_matching(inputs, fps_idx_m, fps_idx_o)
+                    end_points = model(inputs)
 
                 R_final = end_points['pred_R'][0]
                 t_final = end_points['pred_t'][0]
-                print(f"Prediction score is : {end_points['pred_pose_score'][0]}")
-
+                pred_score = end_points['pred_pose_score'][0].item()
+                print(f"Prediction score for {obj_id} is : {pred_score}")
+                # import pdb; pdb.set_trace()
                 # Write results : inverse transform to each camera's frame
 
-                # for j, T_w2c in enumerate(T_w2c_list):
-                #     cam_R_w2c = T_w2c[:3, :3]
-                #     cam_t_w2c = T_w2c[:3, 3]
+                for j in range(len(R_w2c_list)):
+                    cam_R_w2c = R_w2c_list[j]
+                    cam_t_w2c = t_w2c_list[j]
 
-                #     R_img = cam_R_w2c @ R_final
-                #     t_img = cam_R_w2c @ t_final + cam_t_w2c
+                    # Convert from world to camera frame
+                    R_img = cam_R_w2c @ R_final
+                    t_img = (cam_R_w2c @ t_final.view(3, 1) + cam_t_w2c).view(-1)
 
-                #     scene_id = multiview_datas[j][0]['scene_id'].item()
-                #     img_id = multiview_datas[j][0]['img_id'].item()
-                #     obj_id = multiview_datas[j][0]['obj_id'].item()
-                #     line = ','.join((
-                #         str(scene_id),
-                #         str(img_id),
-                #         str(obj_id),
-                #         str(1.0),
-                #         ' '.join((str(v) for v in R_img.flatten().tolist())),
-                #         ' '.join((str(v * 1000) for v in t_img.tolist())),
-                #         '0.0\n'
-                #     ))
-                #     lines.append(line)
+                    scene_id = multiview_datas[j][0]['scene_id'].item()
+                    img_id = multiview_datas[j][0]['img_id'].item()
+
+                    image_time = 0
+                    line = ','.join((
+                        str(scene_id),
+                        str(img_id),
+                        str(obj_id),
+                        f'{pred_score:.6f}',
+                        ' '.join(f'{v:.8f}' for v in R_img.flatten().tolist()),
+                        ' '.join(f'{v * 1000:.8f}' for v in t_img.tolist()),
+                        str(image_time)
+                    )) + '\n'
+
+                    lines.append(line)
 
             multiview_datas.clear()  # Reset buffer after multiview processing
-            import pdb; pdb.set_trace()
+            R_w2c_list.clear()
+            t_w2c_list.clear()
+            # import pdb; pdb.set_trace()
     with open(save_path, 'w+') as f:
         f.writelines(lines)
 
