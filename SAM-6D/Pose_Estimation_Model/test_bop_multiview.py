@@ -125,8 +125,8 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
     lines = []
     with tqdm(total=len(dataloder)) as t:
         multiview_datas = []
-        for i, data in enumerate(dataloder):
-            print("=====================> Processing {}th data".format(i))
+        for data_idx, data in enumerate(dataloder):
+            print("=====================> Processing {}th data".format(data_idx))
             # data = dict_keys(['pts', 'rgb', 'rgb_choose', 'obj', 'model', 'obj_id', 'score', 'scene_id', 'img_id', 'seg_time']) -> for same scene & image show all proposals
             torch.cuda.synchronize()
             end = time.time()
@@ -181,122 +181,156 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
 
             print(f"=====================> Multiview estimation with {len(multiview_datas)} images")
             all_proposals = sum(multiview_datas, [])  # flatten
-            ## Step 1 : Match the objects in multiview images
-            # top 4 object ids with highest scores - need to be changed
-            # Sum scores for each obj_id
-            obj_score_sum = {}
-            for proposal in all_proposals:
-                obj_id = proposal['obj_id'].item()
-                score = proposal['score'].item()
-                obj_score_sum[obj_id] = obj_score_sum.get(obj_id, 0) + score
-
-            top_obj_ids = sorted(obj_score_sum.items(), key= lambda x: x[1], reverse=True)[:4] 
-            top_obj_ids = [obj_id for obj_id, _ in top_obj_ids]
-
-            print(f"Found {len(top_obj_ids)} objects - {top_obj_ids}")
-            print(obj_score_sum)
             
+            from sklearn.cluster import AffinityPropagation
+            from collections import defaultdict
+
+            # Compute similarity matrix using negative 3D center distances
+            centers = []
+            for proposal in all_proposals:
+                center_cam = proposal['pts'].mean(dim=0)  # (3,)
+                R_w2c = proposal['cam_R_w2c'].squeeze(0)  # (3, 3)
+                t_w2c = proposal['cam_t_w2c'].squeeze(0) / 1000.0  # (3,)
+                R_c2w = R_w2c.T
+                t_c2w = -R_c2w @ t_w2c.view(3, 1)
+                center_world = (R_c2w @ center_cam.view(3, 1) + t_c2w).view(-1).cpu().numpy()
+                centers.append(center_world)
+            centers = np.stack(centers)
+            N = len(centers)
+            S = np.zeros((N, N))
+            for i in range(N):
+                for j in range(i + 1, N):
+                    dist = np.linalg.norm(centers[i] - centers[j])
+                    sim = -dist  # Negative distance for AffinityPropagation
+                    S[i, j] = S[j, i] = sim
+            np.fill_diagonal(S, np.median(S))  # Set diagonal preference
+
+            # Run Affinity Propagation clustering
+            clustering = AffinityPropagation(affinity='precomputed', random_state=0)
+            labels = clustering.fit_predict(S)
+
+            # Group proposals by cluster label
+            cluster_proposals = defaultdict(list)
+            for proposal, label in zip(all_proposals, labels):
+                cluster_proposals[label].append(proposal)
+
+            # Print cluster summary
+            print(f"[Clustering] Estimated number of clusters (raw): {len(cluster_proposals)}")
+
+            to_remove = [label for label, proposals in cluster_proposals.items() if len(proposals) < 2]
+            for label in to_remove:
+                cluster_proposals.pop(label)
+
+            print(f"[Clustering] Estimated number of clusters (filtered): {len(cluster_proposals)}")
+            for label, proposals in cluster_proposals.items():
+                print(f"\n[Cluster {label}] contains {len(proposals)} proposals:")
+                for proposal in proposals:
+                    obj_id = proposal['obj_id'].item()
+                    score = proposal['score'].item()
+                    print(f"  obj_id: {obj_id}, score: {score:.4f}")
+
+            cluster_results = {}
             ## Step 2 : Inference multiview pose estimation for each objects with best ID
-            for obj_id in top_obj_ids:
-                proposals_for_obj = [p for p in all_proposals if p['obj_id'].item() == obj_id]
-                if not proposals_for_obj:
-                    continue
-                best_proposal = max(proposals_for_obj, key=lambda p: p['score'].item())
-
+            for label, proposals_for_obj in cluster_proposals.items():
                 merged_pts_list = []
-                R_w2c_list = []
-                t_w2c_list = []
-
-                for view_proposals in multiview_datas:
-                    proposals_in_view = [p for p in view_proposals if p['obj_id'].item() == obj_id]
-                    if not proposals_in_view:
-                        continue
-                    best_in_view = max(proposals_in_view, key=lambda p: p['score'].item())
-
-                    pts = best_in_view['pts']
-                    R_w2c = best_in_view['cam_R_w2c'].squeeze(0)
-                    t_w2c = best_in_view['cam_t_w2c'].squeeze(0) / 1000.0
+                input_list = []
+                for proposal in proposals_for_obj:
+                    pts = proposal['pts']
+                    R_w2c = proposal['cam_R_w2c'].squeeze(0)
+                    t_w2c = proposal['cam_t_w2c'].squeeze(0) / 1000.0
                     R_c2w = R_w2c.T
                     t_c2w = -R_c2w @ t_w2c.view(3, 1)
-
                     pts_world = (R_c2w @ pts.T + t_c2w).T
-
-                    # Export merged_pts as .npy file
-                    obj_save_path = os.path.join(save_path,'individual_pcls',f"img_{best_in_view['img_id'].item()}_obj_{obj_id}.npy")
-                    np.save(obj_save_path.replace('/result_tless.csv',''), pts_world.cpu().numpy())
-
                     merged_pts_list.append(pts_world)
-                    R_w2c_list.append(R_w2c)
-                    t_w2c_list.append(t_w2c)
 
                 if not merged_pts_list:
                     continue
 
-                merged_pts = torch.cat(merged_pts_list, dim=0)  # (N*2048, 3)
-                total_points = merged_pts.shape[0]
+                all_pts = torch.cat(merged_pts_list, dim=0)
+                total_points = all_pts.shape[0]
                 sampled_idx = torch.randperm(total_points)[:2048]
-                merged_pts = merged_pts[sampled_idx].unsqueeze(0)  # (1, 2048, 3)
+                merged_pts = all_pts[sampled_idx]  # shape: (2048, 3)
 
-                # initial pose proposals to world frame
-                # import pdb; pdb.set_trace()
-                # best_proposal_R_w2c = best_proposal['cam_R_w2c'].squeeze(0)
-                # best_proposal_t_w2c = best_proposal['cam_t_w2c'].squeeze(0) / 1000.0
-                # best_proposal_R_c2w = best_proposal_R_w2c.T
-                # best_proposal_t_c2w = -best_proposal_R_w2c @ best_proposal_t_w2c.view(3, 1)
-                # init_R_world = best_proposal_R_c2w @ best_proposal['init_R']
-                # init_t_world = (best_proposal_R_c2w @ best_proposal['init_t'].view(3, 1) + best_proposal_t_c2w).view(-1)
-                obj = best_proposal['obj'][0].item()
-                inputs = {
-                    'pts': merged_pts,
-                    'rgb': best_proposal['rgb'].unsqueeze(0),
-                    'rgb_choose': best_proposal['rgb_choose'].unsqueeze(0),
-                    'model': best_proposal['model'].unsqueeze(0),
-                    'dense_po': dense_po[obj].unsqueeze(0),
-                    'dense_fo': dense_fo[obj].unsqueeze(0)
+                
+                batch_inputs = {
+                    'pts': [],
+                    'rgb': [],
+                    'rgb_choose': [],
+                    'model': [],
+                    'dense_po': [],
+                    'dense_fo': []
                 }
 
-                # Export merged_pts as .npy file
-                obj_save_path = os.path.join(save_path, 'merged_pcls', f"merged_{multiview_datas[0][0]['img_id'].item()}-{multiview_datas[-1][0]['img_id'].item()}_obj_{obj_id}.npy")
-                np.save(obj_save_path.replace('/result_tless.csv',''), merged_pts[0].cpu().numpy())
+                for proposal in proposals_for_obj:
+                    obj = proposal['obj'][0].item()
+                    
+                    batch_inputs['pts'].append(merged_pts.unsqueeze(0))
+                    batch_inputs['rgb'].append(proposal['rgb'].unsqueeze(0))
+                    batch_inputs['rgb_choose'].append(proposal['rgb_choose'].unsqueeze(0))
+                    batch_inputs['model'].append(proposal['model'].unsqueeze(0))
+                    batch_inputs['dense_po'].append(dense_po[obj].unsqueeze(0))
+                    batch_inputs['dense_fo'].append(dense_fo[obj].unsqueeze(0))
+
+                for key in batch_inputs:
+                    batch_inputs[key] = torch.cat(batch_inputs[key], dim=0)
 
                 with torch.no_grad():
-                    end_points = model(inputs)
+                    end_points = model(batch_inputs)
 
-                R_final = end_points['pred_R'][0]
-                t_final = end_points['pred_t'][0]
-                pred_score = end_points['pred_pose_score'][0].item()
-                print(f"Prediction score for {obj_id} is : {pred_score}")
-                # import pdb; pdb.set_trace()
-                # Write results : inverse transform to each camera's frame
+                pred_scores = end_points['pred_pose_score']
+                best_idx = torch.argmax(pred_scores).item()
+                best_proposal = proposals_for_obj[best_idx]
+                obj_id = best_proposal['obj_id'].item()
+                R_final = end_points['pred_R'][best_idx]
+                t_final = end_points['pred_t'][best_idx]
+                cluster_results[label] = {
+                    'obj_id': obj_id,
+                    'score': pred_scores[best_idx].item(),
+                    'R': R_final,
+                    't': t_final
+                }
 
-                for j in range(len(R_w2c_list)):
-                    cam_R_w2c = R_w2c_list[j]
-                    cam_t_w2c = t_w2c_list[j]
+                for i in range(len(proposals_for_obj)):
+                    print(f"→ [Cluster {label}] Proposal {i}: obj_id: {proposals_for_obj[i]['obj_id'].item()}, score: {proposals_for_obj[i]['score'].item():.4f}")
+                print(f"→ [Cluster {label}] Best Proposal: obj_id: {obj_id}, score: {pred_scores[best_idx].item():.4f}")
 
-                    # Convert from world to camera frame
-                    R_img = cam_R_w2c @ R_final
-                    t_img = (cam_R_w2c @ t_final.view(3, 1) + cam_t_w2c).view(-1)
+            # Step 3:  Write final pose of each cluster to every image in multiview_datas (sorted by img_id)
+            sorted_views = sorted(multiview_datas, key=lambda x: x[0]['img_id'].item())
 
-                    scene_id = multiview_datas[j][0]['scene_id'].item()
-                    img_id = multiview_datas[j][0]['img_id'].item()
+            for view_proposals in sorted_views:
+                proposal = view_proposals[0]
+                R_w2c = proposal['cam_R_w2c'].squeeze(0)
+                t_w2c = proposal['cam_t_w2c'].squeeze(0) / 1000.0
+                scene_id = proposal['scene_id'].item()
+                img_id = proposal['img_id'].item()
+
+                for label, result in cluster_results.items():
+                    obj_id = result['obj_id']
+                    R_final = result['R']
+                    t_final = result['t']
+
+                    R_img = R_w2c @ R_final
+                    t_img = (R_w2c @ t_final.view(3, 1) + t_w2c.view(3, 1)).view(-1)
 
                     image_time = 0
                     line = ','.join((
                         str(scene_id),
                         str(img_id),
                         str(obj_id),
-                        f'{pred_score:.6f}',
+                        f'{pred_scores[best_idx].item():.6f}',
                         ' '.join(f'{v:.8f}' for v in R_img.flatten().tolist()),
                         ' '.join(f'{v * 1000:.8f}' for v in t_img.tolist()),
                         str(image_time)
                     )) + '\n'
-
                     lines.append(line)
 
-            multiview_datas.clear()  # Reset buffer after multiview processing
-            R_w2c_list.clear()
-            t_w2c_list.clear()
-            # import pdb; pdb.set_trace()
+                    with open(save_path, 'w+') as f:
+                        f.writelines(lines)
+
+            # Clear data structures
+            cluster_proposals.clear()
+            multiview_datas.clear()
+
     with open(save_path, 'w+') as f:
         f.writelines(lines)
 
