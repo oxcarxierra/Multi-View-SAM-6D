@@ -46,7 +46,7 @@ class BOPTestset():
             model_path = 'models'
         self.template_folder = os.path.join(cfg.template_dir, eval_dataset_name)
 
-        self.data_folder = os.path.join(self.data_dir, eval_dataset_name, 'test')
+        self.data_folder = os.path.join(self.data_dir, eval_dataset_name, 'test_primesense')
         self.model_folder = os.path.join(self.data_dir, eval_dataset_name, model_path)
         obj, obj_ids = load_objs(self.model_folder, self.template_folder, sample_num=self.n_sample_model_point, n_template_view=self.n_template_view)
         obj_idxs = {obj_id: idx for idx, obj_id in enumerate(obj_ids)}
@@ -101,6 +101,8 @@ class BOPTestset():
         scene_folder = os.path.join(self.data_folder, f'{scene_id:06d}')
         scene_camera = json.load(open(os.path.join(scene_folder, 'scene_camera.json')))
         K = np.array(scene_camera[str(img_id)]['cam_K']).reshape((3, 3)).copy()
+        cam_R_w2c = np.array(scene_camera[str(img_id)]['cam_R_w2c']).reshape((3, 3)).copy()
+        cam_t_w2c = np.array(scene_camera[str(img_id)]['cam_t_w2c']).reshape((3, 1)).copy()
         depth_scale = scene_camera[str(img_id)]['depth_scale']
         inst = dict(scene_id=scene_id, img_id=img_id, data_folder=self.data_folder)
 
@@ -158,6 +160,10 @@ class BOPTestset():
 
         ret_dict['obj_id'] = torch.IntTensor([obj_id])
         ret_dict['score'] = torch.FloatTensor([score])
+
+        ret_dict['cam_K'] = torch.FloatTensor(K).view(1, 3, 3)
+        ret_dict['cam_R_w2c'] = torch.FloatTensor(cam_R_w2c).view(1, 3, 3)
+        ret_dict['cam_t_w2c'] = torch.FloatTensor(cam_t_w2c).view(1, 3, 1)
         return ret_dict
 
 

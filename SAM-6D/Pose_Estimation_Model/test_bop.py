@@ -53,11 +53,11 @@ def get_parser():
                         help="path to config file")
     parser.add_argument("--dataset",
                         type=str,
-                        default="all",
+                        default="tless",
                         help="")
     parser.add_argument("--checkpoint_path",
                         type=str,
-                        default="none",
+                        default="checkpoints/sam-6d-pem-base.pth",
                         help="path to checkpoint file")
     parser.add_argument("--iter",
                         type=int,
@@ -65,7 +65,7 @@ def get_parser():
                         help="iter num. for testing")
     parser.add_argument("--view",
                         type=int,
-                        default=-21,
+                        default=21,
                         help="view number of templates")
     parser.add_argument("--exp_id",
                         type=int,
