@@ -72,26 +72,37 @@ def draw_3d_pts(img, imgpts, color, size=1):
         img = cv2.circle(img, (point[0], point[1]), size, color, -1)
     return img
 
-def draw_detections(image, pred_rots, pred_trans, model_points, intrinsics, color=(255, 0, 0)):
+def draw_detections(image, pointclouds_cam, pred_rots, pred_trans, model_points, intrinsics, color=(255, 0, 0)):
     num_pred_instances = len(pred_rots)
     draw_image_bbox = image.copy()
+
     # 3d bbox
     scale = (np.max(model_points, axis=0) - np.min(model_points, axis=0))
     shift = np.mean(model_points, axis=0)
     bbox_3d = get_3d_bbox(scale, shift)
 
-    # 3d point
+    # 3d point from model
     choose = np.random.choice(np.arange(len(model_points)), 512)
     pts_3d = model_points[choose].T
 
     for ind in range(num_pred_instances):
+        # draw original camera-frame pointclouds (in green)
+        if pointclouds_cam is not None:
+            try:
+                pc_cam = pointclouds_cam[ind].T  # (3, N)
+                projected_pc = calculate_2d_projections(pc_cam, intrinsics[ind])
+                draw_image_bbox = draw_3d_pts(draw_image_bbox, projected_pc, color=(0, 255, 0))
+            except Exception as e:
+                print(f"[Warning] Failed to project pointclouds_cam[{ind}]: {e}")
         # draw 3d bounding box
-        transformed_bbox_3d = pred_rots[ind]@bbox_3d + pred_trans[ind][:,np.newaxis]
+        transformed_bbox_3d = pred_rots[ind] @ bbox_3d + pred_trans[ind][:, np.newaxis]
         projected_bbox = calculate_2d_projections(transformed_bbox_3d, intrinsics[ind])
         draw_image_bbox = draw_3d_bbox(draw_image_bbox, projected_bbox, color)
-        # draw point cloud
-        transformed_pts_3d = pred_rots[ind]@pts_3d + pred_trans[ind][:,np.newaxis]
+
+        # draw transformed model points
+        transformed_pts_3d = pred_rots[ind] @ pts_3d + pred_trans[ind][:, np.newaxis]
         projected_pts = calculate_2d_projections(transformed_pts_3d, intrinsics[ind])
         draw_image_bbox = draw_3d_pts(draw_image_bbox, projected_pts, color)
+
 
     return draw_image_bbox
