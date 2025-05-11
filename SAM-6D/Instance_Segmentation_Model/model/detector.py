@@ -465,9 +465,9 @@ class Instance_Segmentation_Model(pl.LightningModule):
         )
 
         # For debugging, render intermediate result 
-        rgb = Image.fromarray(image_np)  # SAM 입력으로 사용된 원본 이미지
-        vis_img = self.visualize(rgb, detections, save_path=f"{self.log_dir}/scene{scene_id}_frame{frame_id}.png")
-        vis_img.save(f"{self.log_dir}/scene{scene_id}_frame{frame_id}.png")
+        # rgb = Image.fromarray(image_np)  # SAM 입력으로 사용된 원본 이미지
+        # vis_img = self.visualize(rgb, detections, save_path=f"{self.log_dir}/scene{scene_id}_frame{frame_id}.png")
+        # vis_img.save(f"{self.log_dir}/scene{scene_id}_frame{frame_id}.png")
 
         return 0
 

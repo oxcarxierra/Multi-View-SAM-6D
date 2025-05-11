@@ -71,12 +71,12 @@ train_dataset:
 train_dataloader:
   bs            : 28
   num_workers   : 24
-  shuffle       : True
+  shuffle       : False
   drop_last     : True
   pin_memory    : False
 
 test_dataset:
-  name: bop_test_dataset
+  name: bop_multiview_test_dataset
   data_dir: ../Data/BOP
   template_dir: ../Data/BOP-Templates
   img_size: 224
@@ -85,7 +85,7 @@ test_dataset:
   n_sample_template_point: 5000
   minimum_n_point: 8
   rgb_mask_flag: True
-  seg_filter_score: 0.25
+  seg_filter_score: 0.5
   n_template_view: 42
 
 
