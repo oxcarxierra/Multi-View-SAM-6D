@@ -12,6 +12,7 @@ import importlib
 import pickle as cPickle
 import json
 import torch
+from PIL import Image
 # from draw_utils import draw_detections
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -24,7 +25,7 @@ sys.path.append(os.path.join(BASE_DIR, 'model', 'pointnet2'))
 detetion_paths = {
     'ycbv': '../Instance_Segmentation_Model/log/sam/result_ycbv.json',
     'tudl': '../Instance_Segmentation_Model/log/sam/result_tudl.json',
-    'tless': '../Instance_Segmentation_Model/log/sam/result_tless.json',
+    'tless': '../Instance_Segmentation_Model/log/sam/result_tless_scene_10.json',
     'lmo': '../Instance_Segmentation_Model/log/sam/result_lmo.json',
     'itodd': '../Instance_Segmentation_Model/log/sam/result_itodd.json',
     'icbin': '../Instance_Segmentation_Model/log/sam/result_icbin.json',
@@ -50,7 +51,7 @@ def get_parser():
                         help="name of model")
     parser.add_argument("--config",
                         type=str,
-                        default="config/base.yaml",
+                        default="config/base_multiview.yaml",
                         help="path to config file")
     parser.add_argument("--dataset",
                         type=str,
@@ -72,6 +73,14 @@ def get_parser():
                         type=int,
                         default=0,
                         help="experiment id")
+    parser.add_argument("--visualization",
+                        type=bool,
+                        default=False,
+                        help="visualize PEM results")
+    parser.add_argument("--n_multiview",
+                        type=int,
+                        default=5,
+                        help="number of multiview images for each scene")
     args_cfg = parser.parse_args()
 
     return args_cfg
@@ -92,8 +101,8 @@ def init():
     cfg.checkpoint_path = args.checkpoint_path
     cfg.test_iter = args.iter
     cfg.dataset = args.dataset
-
-    cfg.multi_view_count = 5 # number of views to be used as multiview input
+    cfg.visualization = args.visualization
+    cfg.test_dataset.n_multiview = args.n_multiview
 
     if args.view != -1:
         cfg.test_dataset.n_template_view = args.view
@@ -121,18 +130,23 @@ def compute_bbox_iou(pts1, pts2):
 def test(model, cfg, save_path, dataset_name, detetion_path):
     model.eval()
     bs = cfg.test_dataloader.bs
+    cluster_summary_lines = []
 
     # build dataloader
+    def identity_collate(batch):
+        return batch[0]
+
     dataset = importlib.import_module(cfg.test_dataset.name)
-    dataset = dataset.BOPTestset(cfg.test_dataset, dataset_name, detetion_path)
+    dataset = dataset.BOPMultiviewTestset(cfg.test_dataset, dataset_name, detetion_path)
     dataloder = torch.utils.data.DataLoader(
             dataset,
             batch_size=1,
-            num_workers=cfg.test_dataloader.num_workers,
-            shuffle=cfg.test_dataloader.shuffle,
+            num_workers=0,
+            shuffle=False, # cfg.test_dataloader.shuffle,
             sampler=None,
             drop_last=cfg.test_dataloader.drop_last,
-            pin_memory=cfg.test_dataloader.pin_memory
+            pin_memory=cfg.test_dataloader.pin_memory,
+            collate_fn=identity_collate
         )
 
     # prepare for target objects
@@ -142,68 +156,34 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
 
     lines = []
     with tqdm(total=len(dataloder)) as t:
-        multiview_datas = []
-        for data_idx, data in enumerate(dataloder):
-            print("=====================> Processing {}th data".format(data_idx))
+        for group_idx, data in enumerate(dataloder):
+            print(f"=====================> Processing {group_idx+1}th multiview batch")
             # data = dict_keys(['pts', 'rgb', 'rgb_choose', 'obj', 'model', 'obj_id', 'score', 'scene_id', 'img_id', 'seg_time']) -> for same scene & image show all proposals
             torch.cuda.synchronize()
             end = time.time()
 
-            for key in data:
-                data[key] = data[key].cuda()
+            assert len(data) == cfg.test_dataset.n_multiview, \
+                f"Expected {cfg.test_dataset.n_multiview} images, but got {len(data)} images."
 
-            # Commented batch processing
-            # n_instance = data['pts'].size(1)
-            # n_batch = int(np.ceil(n_instance/bs))
-            # for j in range(n_batch): 
-            # start_idx = j * bs
-            # end_idx = n_instance if j == n_batch-1 else (j+1) * bs
-            # obj = data['obj'][0][start_idx:end_idx].reshape(-1)
+            multiview_datas = []
+            for single_img_data in data:
+                single_image_proposals = []
+                for proposal_idx in range(len(single_img_data['obj'])):
+                    proposal = {}
+                    for key in single_img_data.keys():
+                        if key in ['img_id', 'scene_id', 'seg_time']:
+                            proposal[key] = single_img_data[key][0].cuda()
+                        else:
+                            proposal[key] = single_img_data[key][proposal_idx].cuda()
+                    single_image_proposals.append(proposal)
+                multiview_datas.append(single_image_proposals)
+            all_proposals = sum(multiview_datas, [])  # flatten
 
-            # start_idx = 0
-            # end_idx = data['pts'].size(1)
-            # obj = data['obj'][0][start_idx:end_idx].reshape(-1)
-            # import pdb; pdb.set_trace()
-            # # process inputs
-            # inputs = {}
-            # inputs['pts'] = data['pts'][0][start_idx:end_idx].contiguous()
-            # inputs['rgb'] = data['rgb'][0][start_idx:end_idx].contiguous()
-            # inputs['rgb_choose'] = data['rgb_choose'][0][start_idx:end_idx].contiguous()
-            # inputs['model'] = data['model'][0][start_idx:end_idx].contiguous()
-            # inputs['dense_po'] = dense_po[obj].contiguous()
-            # inputs['dense_fo'] = dense_fo[obj].contiguous()
-
-            # make predictions
-            # with torch.no_grad():
-            #     end_points, fps_idx_m, fps_idx_o = model.singleview_coarse_point_matching(inputs)
-            # end_points = dict_keys(['pts', 'rgb', 'rgb_choose', 'model', 'dense_po', 'dense_fo', 'init_R', 'init_t'])
-
-            single_image_proposals = []
-            for p in range(len(data['pts'][0])):
-                if data['score'][0][p] < 0.5:
-                    continue
-                proposal = {}
-                for key in data:
-                    if key in ['pts', 'rgb', 'rgb_choose', 'obj', 'model', 'obj_id', 'score', 'cam_R_w2c', 'cam_t_w2c']:
-                        proposal[key] = data[key][0][p]
-                    else:
-                        proposal[key] = data[key][0]  # just take [0] for image-level data
-                # for key in end_points:
-                #     proposal[key] = end_points[key][p]
-                single_image_proposals.append(proposal)
-
-            multiview_datas.append(single_image_proposals)
             # multiview_datas = [[proposal1, proposal2, ...], [proposal1, proposal2, ...], ...]
             # proposal is a object with key ['pts', 'rgb', 'rgb_choose', 'obj', 'model', 'obj_id', 'score', 'cam_K', 'cam_R_w2c', 'cam_t_w2c', 'scene_id', 'img_id', 'seg_time', 'dense_po', 'dense_fo', 'init_R', 'init_t']
 
-            if len(multiview_datas) != cfg.multi_view_count:
-                continue    
-
-            print(f"=====================> Multiview estimation with {len(multiview_datas)} images")
-            all_proposals = sum(multiview_datas, [])  # flatten
-            
             # Save all_proposals to a file for debugging
-            # debug_file_path = os.path.join(cfg.log_dir, f"debug_all_proposals_scene_{data['scene_id'].item()}_batch_{data_idx}.json")
+            # debug_file_path = os.path.join(cfg.log_dir, f"debug_all_proposals_scene_{data['scene_id'].item()}_batch_{group_idx}.json")
             # with open(debug_file_path, 'w') as debug_file:
             #     json.dump(
             #         [{key: (value.cpu().numpy().tolist() if isinstance(value, torch.Tensor) else value) 
@@ -234,9 +214,11 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
             for i in range(N):
                 for j in range(i + 1, N):
                     dist = np.linalg.norm(centers[i] - centers[j])
-                    iou = compute_bbox_iou(all_proposals[i]['pts'], all_proposals[j]['pts'])
-                    sim = -dist + 0 * iou  # Weighting example: 1.0 * dist + 0.5 * IoU
+                    # obj_same_bonus = 1.0 if all_proposals[i]['obj_id'].item() == all_proposals[j]['obj_id'].item() else 0.0
+                    # iou = compute_bbox_iou(all_proposals[i]['pts'], all_proposals[j]['pts'])
+                    sim = -dist  # Weighting example: 1.0 * dist + 0.5 * IoU
                     S[i, j] = S[j, i] = sim
+            print(S)
             np.fill_diagonal(S, np.median(S))  # Set diagonal preference
 
             # Run Affinity Propagation clustering
@@ -266,6 +248,8 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
             ## Step 2 : Inference multiview pose estimation for each objects with best ID
             cluster_results = {}
             for label, proposals_for_obj in cluster_proposals.items():
+                cluster_summary_lines = []
+                cluster_summary_lines.append("scene_id,img_id,num_clusters\n")
                 merged_pts_list = []
                 input_list = []
                 for proposal in proposals_for_obj:
@@ -285,8 +269,8 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                 sampled_idx = torch.randperm(total_points)[:proposals_for_obj[0]['pts'].shape[0]]
                 merged_pts = all_pts[sampled_idx]  # shape: (2048, 3)
 
-                # cluster_obj_id = max(proposals_for_obj, key=lambda p: p['score'].item())['obj_id'].item()
-                # model_for_cluster_obj_id = next(proposal['model'] for proposal in proposals_for_obj if proposal['obj_id'].item() == cluster_obj_id)
+                cluster_obj_id = max(proposals_for_obj, key=lambda p: p['score'].item())['obj_id'].item()
+                model_for_cluster_obj_id = next(proposal['model'] for proposal in proposals_for_obj if proposal['obj_id'].item() == cluster_obj_id)
 
                 batch_inputs = {
                     'pts': [],
@@ -299,11 +283,14 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
 
                 for proposal in proposals_for_obj:
                     obj = proposal['obj'][0].item()
-                    batch_inputs['pts'].append(merged_pts.unsqueeze(0))
+                    R_w2c = proposal['cam_R_w2c'].squeeze(0)
+                    t_w2c = proposal['cam_t_w2c'].squeeze(0) / 1000.0
+                    merged_pts_camera_frame = (R_w2c @ merged_pts.T + t_w2c.view(3, 1)).T
+                    batch_inputs['pts'].append(merged_pts_camera_frame.unsqueeze(0))
                     batch_inputs['rgb'].append(proposal['rgb'].unsqueeze(0))
                     batch_inputs['rgb_choose'].append(proposal['rgb_choose'].unsqueeze(0))
-                    batch_inputs['model'].append(proposal['model'].unsqueeze(0))
-                    # batch_inputs['model'].append(model_for_cluster_obj_id.unsqueeze(0))
+                    # batch_inputs['model'].append(proposal['model'].unsqueeze(0))
+                    batch_inputs['model'].append(model_for_cluster_obj_id.unsqueeze(0))
                     batch_inputs['dense_po'].append(dense_po[obj].unsqueeze(0))
                     batch_inputs['dense_fo'].append(dense_fo[obj].unsqueeze(0))
 
@@ -320,13 +307,14 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                 R_final = end_points['pred_R'][best_idx]
                 t_final = end_points['pred_t'][best_idx].view(-1)
 
-                # R_c2w = best_proposal['cam_R_w2c'].squeeze(0).T
-                # t_c2w = -R_c2w @ (best_proposal['cam_t_w2c'].squeeze(0) / 1000.0).view(3, 1)
-                # R_final = R_c2w @ end_points['pred_R'][best_idx]
-                # t_final = (R_c2w @ end_points['pred_t'][best_idx].view(3, 1) + t_c2w).view(-1)
+                R_c2w = best_proposal['cam_R_w2c'].squeeze(0).T
+                t_c2w = -R_c2w @ (best_proposal['cam_t_w2c'].squeeze(0) / 1000.0).view(3, 1)
+                R_final = R_c2w @ end_points['pred_R'][best_idx]
+                t_final = (R_c2w @ end_points['pred_t'][best_idx].view(3, 1) + t_c2w).view(-1)
                 
                 cluster_results[label] = {
                     'obj_id': best_proposal_obj_id,
+                    'merged_points': merged_pts,
                     'pem_score': pred_scores[best_idx].item(),
                     'R': R_final,
                     't': t_final
@@ -345,15 +333,18 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                 t_w2c = proposal['cam_t_w2c'].squeeze(0) / 1000.0
                 scene_id = proposal['scene_id'].item()
                 img_id = proposal['img_id'].item()
+                cluster_summary_lines.append(f"{scene_id},{img_id},{len(cluster_results)}\n")
 
                 for label, result in cluster_results.items():
                     obj_id = result['obj_id']
                     R_final = result['R']
                     t_final = result['t']
                     pem_score = result['pem_score']
+                    merged_points = result['merged_points']
+                    merged_pts_camera_frame = (R_w2c @ merged_points.T + t_w2c.view(3, 1)).T
 
                     R_img = R_w2c @ R_final
-                    t_img = (R_w2c @ t_final.view(3, 1) + t_w2c.view(3, 1)).view(-1)
+                    t_img = ((R_w2c @ t_final.view(3, 1) + t_w2c.view(3, 1)).view(-1))*1000
 
                     image_time = 0
                     line = ','.join((
@@ -362,7 +353,7 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                         str(obj_id),
                         f'{pem_score:.6f}',
                         ' '.join(f'{v:.8f}' for v in R_img.flatten().tolist()),
-                        ' '.join(f'{v * 1000:.8f}' for v in t_img.tolist()),
+                        ' '.join(f'{v:.8f}' for v in t_img.tolist()),
                         str(image_time)
                     )) + '\n'
                     lines.append(line)
@@ -370,21 +361,33 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                     with open(save_path, 'w+') as f:
                         f.writelines(lines)
                     
-                    # Visualize the results (WIP)
-                    # from utils.inference import visualize
-                    # vis_path = os.path.join(save_path.replace('result_tless.csv','visualize'), f"result_{scene_id:06d}.png")
-                    # vis_img = visualize(img, [R], [t], model_points * 1000, [K_], save_path)
-                    # vis_img.save(save_path)
-
+                    if cfg.visualization:
+                        vis_dir = save_path.replace('result_tless.csv',f"pem_visualization/scene_{scene_id:06d}/")
+                        os.makedirs(os.path.dirname(vis_dir), exist_ok=True)
+                        vis_path = os.path.join(vis_dir, f"group{group_idx+1}_img{img_id}_cluster{label}_obj{obj_id}.png")
+                        img_path = BASE_DIR + "/../Data/BOP/tless/test_primesense/" + str(scene_id).zfill(6) + "/rgb/" + str(img_id).zfill(6) + ".png"
+                        cad_path = BASE_DIR + "/../Data/BOP/tless/models_cad/obj_" + str(obj_id).zfill(6) + ".ply"
+                        img = np.array(Image.open(img_path))
+                        import trimesh
+                        mesh = trimesh.load_mesh(cad_path)
+                        model_points = mesh.sample(512).astype(np.float32)
+                        K_ = proposal['cam_K'].cpu().numpy()
+                        vis_img = visualize(img, [merged_pts_camera_frame.cpu().numpy()], [R_img.cpu().numpy()], [t_img.cpu().numpy()], model_points, K_, vis_path)
+                    
             # Clear data structures
             cluster_proposals.clear()
             multiview_datas.clear()
 
     with open(save_path, 'w+') as f:
         f.writelines(lines)
+    cluster_csv_path = os.path.join(os.path.dirname(save_path), "cluster_result.csv")
+    with open(cluster_csv_path, 'w+') as f:
+        f.write("scene_id,img_id,num_clusters\n")
+        f.writelines(cluster_summary_lines)
 
-def visualize(rgb, pred_rot, pred_trans, model_points, K, save_path):
-    img = draw_detections(rgb, pred_rot, pred_trans, model_points, K, color=(255, 0, 0))
+def visualize(rgb, pointcloud, pred_rot, pred_trans, model_points, K, save_path):
+    from draw_utils import draw_detections
+    img = draw_detections(rgb, pointcloud, pred_rot, pred_trans, model_points, K, color=(255, 0, 0))
     img = Image.fromarray(np.uint8(img))
     img.save(save_path)
     prediction = Image.open(save_path)
@@ -394,6 +397,7 @@ def visualize(rgb, pred_rot, pred_trans, model_points, K, save_path):
     concat = Image.new('RGB', (img_np.shape[1] + prediction.size[0], img_np.shape[0]))
     concat.paste(rgb_pil, (0, 0))
     concat.paste(prediction, (img_np.shape[1], 0))
+    concat.save(save_path)
     return concat
 
 if __name__ == "__main__":
@@ -447,8 +451,3 @@ if __name__ == "__main__":
 
         print('saving to {} ...'.format(save_path))
         print('finishing evaluation on {} ...'.format(dataset_name))
-
-
-
-
-

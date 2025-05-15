@@ -344,6 +344,7 @@ if __name__ == "__main__":
 
             vis_img = visualize(img, [R], [t], model_points * 1000, [K_], save_path)
             vis_img.save(save_path)
+            import pdb; pdb.set_trace()
         # save_path = os.path.join(f"{cfg.output_dir}/sam6d_results", 'vis_pem.png')
         # valid_masks = pose_scores == pose_scores.max()
         # K = input_data['K'].detach().cpu().numpy()[valid_masks]
