@@ -25,7 +25,7 @@ sys.path.append(os.path.join(BASE_DIR, 'model', 'pointnet2'))
 detetion_paths = {
     'ycbv': '../Instance_Segmentation_Model/log/sam/result_ycbv.json',
     'tudl': '../Instance_Segmentation_Model/log/sam/result_tudl.json',
-    'tless': '../Instance_Segmentation_Model/log/sam/result_tless_scene_01-10.json',
+    'tless': '../Instance_Segmentation_Model/log/sam/result_tless_scene_10.json',
     'lmo': '../Instance_Segmentation_Model/log/sam/result_lmo.json',
     'itodd': '../Instance_Segmentation_Model/log/sam/result_itodd.json',
     'icbin': '../Instance_Segmentation_Model/log/sam/result_icbin.json',
@@ -51,7 +51,7 @@ def get_parser():
                         help="name of model")
     parser.add_argument("--config",
                         type=str,
-                        default="config/base.yaml",
+                        default="config/base_multiview.yaml",
                         help="path to config file")
     parser.add_argument("--dataset",
                         type=str,
@@ -130,6 +130,7 @@ def compute_bbox_iou(pts1, pts2):
 def test(model, cfg, save_path, dataset_name, detetion_path):
     model.eval()
     bs = cfg.test_dataloader.bs
+    cluster_summary_lines = []
 
     # build dataloader
     def identity_collate(batch):
@@ -177,6 +178,7 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                     single_image_proposals.append(proposal)
                 multiview_datas.append(single_image_proposals)
             all_proposals = sum(multiview_datas, [])  # flatten
+
             # multiview_datas = [[proposal1, proposal2, ...], [proposal1, proposal2, ...], ...]
             # proposal is a object with key ['pts', 'rgb', 'rgb_choose', 'obj', 'model', 'obj_id', 'score', 'cam_K', 'cam_R_w2c', 'cam_t_w2c', 'scene_id', 'img_id', 'seg_time', 'dense_po', 'dense_fo', 'init_R', 'init_t']
 
@@ -212,9 +214,11 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
             for i in range(N):
                 for j in range(i + 1, N):
                     dist = np.linalg.norm(centers[i] - centers[j])
-                    iou = compute_bbox_iou(all_proposals[i]['pts'], all_proposals[j]['pts'])
-                    sim = -dist + 0 * iou  # Weighting example: 1.0 * dist + 0.5 * IoU
+                    # obj_same_bonus = 1.0 if all_proposals[i]['obj_id'].item() == all_proposals[j]['obj_id'].item() else 0.0
+                    # iou = compute_bbox_iou(all_proposals[i]['pts'], all_proposals[j]['pts'])
+                    sim = -dist  # Weighting example: 1.0 * dist + 0.5 * IoU
                     S[i, j] = S[j, i] = sim
+            print(S)
             np.fill_diagonal(S, np.median(S))  # Set diagonal preference
 
             # Run Affinity Propagation clustering
@@ -244,6 +248,8 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
             ## Step 2 : Inference multiview pose estimation for each objects with best ID
             cluster_results = {}
             for label, proposals_for_obj in cluster_proposals.items():
+                cluster_summary_lines = []
+                cluster_summary_lines.append("scene_id,img_id,num_clusters\n")
                 merged_pts_list = []
                 input_list = []
                 for proposal in proposals_for_obj:
@@ -263,8 +269,8 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                 sampled_idx = torch.randperm(total_points)[:proposals_for_obj[0]['pts'].shape[0]]
                 merged_pts = all_pts[sampled_idx]  # shape: (2048, 3)
 
-                # cluster_obj_id = max(proposals_for_obj, key=lambda p: p['score'].item())['obj_id'].item()
-                # model_for_cluster_obj_id = next(proposal['model'] for proposal in proposals_for_obj if proposal['obj_id'].item() == cluster_obj_id)
+                cluster_obj_id = max(proposals_for_obj, key=lambda p: p['score'].item())['obj_id'].item()
+                model_for_cluster_obj_id = next(proposal['model'] for proposal in proposals_for_obj if proposal['obj_id'].item() == cluster_obj_id)
 
                 batch_inputs = {
                     'pts': [],
@@ -283,8 +289,8 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                     batch_inputs['pts'].append(merged_pts_camera_frame.unsqueeze(0))
                     batch_inputs['rgb'].append(proposal['rgb'].unsqueeze(0))
                     batch_inputs['rgb_choose'].append(proposal['rgb_choose'].unsqueeze(0))
-                    batch_inputs['model'].append(proposal['model'].unsqueeze(0))
-                    # batch_inputs['model'].append(model_for_cluster_obj_id.unsqueeze(0))
+                    # batch_inputs['model'].append(proposal['model'].unsqueeze(0))
+                    batch_inputs['model'].append(model_for_cluster_obj_id.unsqueeze(0))
                     batch_inputs['dense_po'].append(dense_po[obj].unsqueeze(0))
                     batch_inputs['dense_fo'].append(dense_fo[obj].unsqueeze(0))
 
@@ -327,6 +333,7 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                 t_w2c = proposal['cam_t_w2c'].squeeze(0) / 1000.0
                 scene_id = proposal['scene_id'].item()
                 img_id = proposal['img_id'].item()
+                cluster_summary_lines.append(f"{scene_id},{img_id},{len(cluster_results)}\n")
 
                 for label, result in cluster_results.items():
                     obj_id = result['obj_id']
@@ -357,7 +364,7 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                     if cfg.visualization:
                         vis_dir = save_path.replace('result_tless.csv',f"pem_visualization/scene_{scene_id:06d}/")
                         os.makedirs(os.path.dirname(vis_dir), exist_ok=True)
-                        vis_path = os.path.join(vis_dir, f"group{group_idx+1}_img{img_id}_obj{obj_id}.png")
+                        vis_path = os.path.join(vis_dir, f"group{group_idx+1}_img{img_id}_cluster{label}_obj{obj_id}.png")
                         img_path = BASE_DIR + "/../Data/BOP/tless/test_primesense/" + str(scene_id).zfill(6) + "/rgb/" + str(img_id).zfill(6) + ".png"
                         cad_path = BASE_DIR + "/../Data/BOP/tless/models_cad/obj_" + str(obj_id).zfill(6) + ".ply"
                         img = np.array(Image.open(img_path))
@@ -373,6 +380,10 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
 
     with open(save_path, 'w+') as f:
         f.writelines(lines)
+    cluster_csv_path = os.path.join(os.path.dirname(save_path), "cluster_result.csv")
+    with open(cluster_csv_path, 'w+') as f:
+        f.write("scene_id,img_id,num_clusters\n")
+        f.writelines(cluster_summary_lines)
 
 def visualize(rgb, pointcloud, pred_rot, pred_trans, model_points, K, save_path):
     from draw_utils import draw_detections

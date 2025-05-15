@@ -23,7 +23,7 @@ sys.path.append(os.path.join(BASE_DIR, 'model', 'pointnet2'))
 detetion_paths = {
     'ycbv': '../Instance_Segmentation_Model/log/sam/result_ycbv.json',
     'tudl': '../Instance_Segmentation_Model/log/sam/result_tudl.json',
-    'tless': '../Instance_Segmentation_Model/log/sam/result_tless.json',
+    'tless': '../Instance_Segmentation_Model/log/sam/result_tless_scene_01.json',
     'lmo': '../Instance_Segmentation_Model/log/sam/result_lmo.json',
     'itodd': '../Instance_Segmentation_Model/log/sam/result_itodd.json',
     'icbin': '../Instance_Segmentation_Model/log/sam/result_icbin.json',
