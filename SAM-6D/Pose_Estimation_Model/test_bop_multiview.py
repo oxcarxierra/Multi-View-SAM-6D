@@ -13,6 +13,9 @@ import pickle as cPickle
 import json
 import torch
 from PIL import Image
+from utils.custom_utils import compute_similarity_score
+from sklearn.cluster import AffinityPropagation
+from collections import defaultdict
 # from draw_utils import draw_detections
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -25,7 +28,7 @@ sys.path.append(os.path.join(BASE_DIR, 'model', 'pointnet2'))
 detetion_paths = {
     'ycbv': '../Instance_Segmentation_Model/log/sam/result_ycbv.json',
     'tudl': '../Instance_Segmentation_Model/log/sam/result_tudl.json',
-    'tless': '../Instance_Segmentation_Model/log/sam/result_tless_scene_10.json',
+    'tless': '../Instance_Segmentation_Model/log/sam/result_tless_scene_01-10.json',
     'lmo': '../Instance_Segmentation_Model/log/sam/result_lmo.json',
     'itodd': '../Instance_Segmentation_Model/log/sam/result_itodd.json',
     'icbin': '../Instance_Segmentation_Model/log/sam/result_icbin.json',
@@ -194,32 +197,18 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
             #         indent=4
             #     )
             # print(f"Saved all_proposals to {debug_file_path} for debugging.")
-
-            from sklearn.cluster import AffinityPropagation
-            from collections import defaultdict
-
-            # Compute similarity matrix using negative 3D center distances
-            centers = []
-            for proposal in all_proposals:
-                center_cam = proposal['pts'].mean(dim=0)  # (3,)
-                R_w2c = proposal['cam_R_w2c'].squeeze(0)  # (3, 3)
-                t_w2c = proposal['cam_t_w2c'].squeeze(0) / 1000.0  # (3,)
-                R_c2w = R_w2c.T
-                t_c2w = -R_c2w @ t_w2c.view(3, 1)
-                center_world = (R_c2w @ center_cam.view(3, 1) + t_c2w).view(-1).cpu().numpy()
-                centers.append(center_world)
-            centers = np.stack(centers)
-            N = len(centers)
+            
+            ## Step 1: Cluster proposals
+            # Compute score and make similarity matrix
+            N = len(all_proposals)
             S = np.zeros((N, N))
+
             for i in range(N):
                 for j in range(i + 1, N):
-                    dist = np.linalg.norm(centers[i] - centers[j])
-                    # obj_same_bonus = 1.0 if all_proposals[i]['obj_id'].item() == all_proposals[j]['obj_id'].item() else 0.0
-                    # iou = compute_bbox_iou(all_proposals[i]['pts'], all_proposals[j]['pts'])
-                    sim = -dist  # Weighting example: 1.0 * dist + 0.5 * IoU
-                    S[i, j] = S[j, i] = sim
-            print(S)
-            np.fill_diagonal(S, np.median(S))  # Set diagonal preference
+                    similarity_score = compute_similarity_score(all_proposals[i], all_proposals[j])
+                    S[i, j] = S[j, i] = similarity_score
+
+            np.fill_diagonal(S, np.median(S))
 
             # Run Affinity Propagation clustering
             clustering = AffinityPropagation(affinity='precomputed', random_state=0)
