@@ -98,7 +98,6 @@ class Net(nn.Module):
         # end_points = dict_keys(['pts', 'rgb', 'rgb_choose', 'model', 'dense_po', 'dense_fo', 'init_R', 'init_t'])
         # end_points['init_R'].shape = torch.Size([7, 3, 3])
         # end_points['init_t'].shape = torch.Size([7, 3])
-        return end_points
         
         # fine_point_matching
         end_points = self.fine_point_matching(
