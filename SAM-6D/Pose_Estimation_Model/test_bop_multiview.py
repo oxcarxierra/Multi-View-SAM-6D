@@ -243,71 +243,23 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                 all_pts = torch.cat(merged_pts_list, dim=0)
                 filtered_pts = remove_outliers_lof(all_pts, n_neighbors=20, contamination=0.01)
                 n_points = filtered_pts.shape[0]
-                sampled_idx = torch.randperm(n_points)[:proposals_for_obj[0]['pts'].shape[0]]
+                sampled_idx = torch.randperm(n_points)[:proposals_for_obj[0]['pts'].shape[0]*2]
                 merged_pts = filtered_pts[sampled_idx]  # shape: (2048, 3)
 
                 cluster_obj_id = max(proposals_for_obj, key=lambda p: p['score'].item())['obj_id'].item()
                 model_for_cluster_obj_id = next(proposal['model'] for proposal in proposals_for_obj if proposal['obj_id'].item() == cluster_obj_id)
                 obj_ids.append(cluster_obj_id)
 
-                batch_inputs = {
-                    'pts': [],
-                    'rgb': [],
-                    'rgb_choose': [],
-                    'model': [],
-                    'dense_po': [],
-                    'dense_fo': []
-                }
-
-                for proposal in proposals_for_obj:
-                    obj = proposal['obj'][0].item()
-                    R_w2c = proposal['cam_R_w2c'].squeeze(0)
-                    t_w2c = proposal['cam_t_w2c'].squeeze(0) / 1000.0
-                    merged_pts_camera_frame = (R_w2c @ merged_pts.T + t_w2c.view(3, 1)).T
-                    batch_inputs['pts'].append(merged_pts_camera_frame.unsqueeze(0))
-                    batch_inputs['rgb'].append(proposal['rgb'].unsqueeze(0))
-                    batch_inputs['rgb_choose'].append(proposal['rgb_choose'].unsqueeze(0))
-                    # batch_inputs['model'].append(proposal['model'].unsqueeze(0))
-                    batch_inputs['model'].append(model_for_cluster_obj_id.unsqueeze(0))
-                    batch_inputs['dense_po'].append(dense_po[obj].unsqueeze(0))
-                    batch_inputs['dense_fo'].append(dense_fo[obj].unsqueeze(0))
-
-                for key in batch_inputs:
-                    batch_inputs[key] = torch.cat(batch_inputs[key], dim=0)
-
-                with torch.no_grad():
-                    end_points = model(batch_inputs)
-                
-                pred_scores = end_points['pred_pose_score']
-                best_idx = torch.argmax(pred_scores).item()
-                best_proposal = proposals_for_obj[best_idx]
-                best_proposal_obj_id = best_proposal['obj_id'].item()
-                # R_final = end_points['pred_R'][best_idx]
-                # t_final = end_points['pred_t'][best_idx].view(-1)
-
-                R_c2w = best_proposal['cam_R_w2c'].squeeze(0).T
-                t_c2w = -R_c2w @ (best_proposal['cam_t_w2c'].squeeze(0) / 1000.0).view(3, 1)
-                R_final = R_c2w @ end_points['pred_R'][best_idx]
-                t_final = (R_c2w @ end_points['pred_t'][best_idx].view(3, 1) + t_c2w).view(-1)
-                
+                reg = RigidRegistration(X=merged_pts.cpu().numpy(), Y=model_for_cluster_obj_id.cpu().numpy())
+                TY, (s_reg, R_reg, t_reg) = reg.register() # model2world
                 cluster_results[label] = {
-                    'obj_id': best_proposal_obj_id,
+                    'obj_id': cluster_obj_id,
                     'merged_points': merged_pts,
-                    'pem_score': pred_scores[best_idx].item(),
-                    'R': R_final,
-                    't': t_final
-                }
-                
-                print(f"\n[Cluster {label}] Best Proposal: obj_id: {best_proposal_obj_id}, score: {pred_scores[best_idx].item():.4f}")
-                for proposal_idx in range(len(proposals_for_obj)):
-                    print(f"Proposal {proposal_idx}: obj_id: {proposals_for_obj[proposal_idx]['obj_id'].item()}, score: {pred_scores[proposal_idx]:.4f}")
-                
+                    'R': R_reg,
+                    't': t_reg,
+                    'pem_score': 0.0
+                }                
             
-            cluster_summary_lines.append(f"{all_proposals[0]['scene_id'].view(-1)[0].item()},{group_idx+1},\"{sorted(obj_ids)}\"\n")
-            print(f"Cluster summary for scene {all_proposals[0]['scene_id'].item()}, group {group_idx+1}: {sorted(obj_ids)}")
-            with open(cluster_csv_path, 'w+') as f:
-                f.writelines(cluster_summary_lines)
-            # Step 3:  Write final pose of each cluster to every image in multiview_datas (sorted by img_id)
             sorted_views = sorted(multiview_datas, key=lambda x: x[0]['img_id'].item())
 
             for view_proposals in sorted_views:
@@ -325,7 +277,7 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                     merged_points = result['merged_points']
                     merged_pts_camera_frame = (R_w2c @ merged_points.T + t_w2c.view(3, 1)).T
 
-                    R_img = R_w2c @ R_final
+                    R_img = R_w2c @ R_final # Rm2c = Rw2c @ Rm2w
                     t_img = ((R_w2c @ t_final.view(3, 1) + t_w2c.view(3, 1)).view(-1))*1000
 
                     image_time = 0
@@ -343,7 +295,7 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                     with open(save_path, 'w+') as f:
                         f.writelines(lines)
                     
-                    if cfg.visualization and scene_id in [10]:
+                    if cfg.visualization:
                         print(f"Visualizing scene {scene_id}, image {img_id}, cluster {label}, object {obj_id}")
                         vis_dir = save_path.replace('result_tless.csv',f"pem_visualization/scene_{scene_id:06d}/")
                         os.makedirs(os.path.dirname(vis_dir), exist_ok=True)
