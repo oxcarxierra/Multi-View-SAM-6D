@@ -1,5 +1,7 @@
 import numpy as np
 import cv2
+import torch
+from sklearn.neighbors import LocalOutlierFactor
 
 
 # --- Modularized and improved similarity computation ---
@@ -44,6 +46,7 @@ def compute_mask_coverage_ratio(pts_world, cam_R_w2c, cam_t_w2c, K, mask):
 
 def compute_depth_agreement(pts_world, cam_R_w2c, cam_t_w2c, K, depth_map):
     proj_2d, cam_z_valid, valid_mask = project_points_to_image(pts_world, cam_R_w2c, cam_t_w2c, K)
+    depth_map = np.squeeze(depth_map)
     H, W = depth_map.shape
     if proj_2d.shape[0] == 0:
         return 0.0
@@ -61,11 +64,54 @@ def compute_depth_agreement(pts_world, cam_R_w2c, cam_t_w2c, K, depth_map):
     true_depth = depth_map[proj_y, proj_x] / 1000.0
 
     diff = pred_depth - true_depth
-    exact_match = np.abs(diff) < 0.01
-    penalized = diff > 0.02
-    score = 1.5 * np.sum(exact_match) / len(diff) - 1.5 * np.sum(penalized) / len(diff)
+    # exact_match = np.abs(diff) < 0.01
+    # penalized = diff > 0.02
+    severe_penalty = (true_depth - pred_depth) * (true_depth > pred_depth)
+    score = - 1000.0 * np.sum(severe_penalty) / len(diff)
+    # print("exact_match:", np.sum(exact_match) / len(diff))
+    # print("penalized:", np.sum(penalized) / len(diff))
+    # print("severe_penalty:", np.sum(severe_penalty) / len(diff))
     return score
     
+def compute_occlusion_consistency_score(pts_world, cam_R_w2c, cam_t_w2c, K, mask, depth_map):
+    """
+    When points are projected onto the other proposal's viewpoint, 
+    they should either be inside the visible mask or occluded (i.e., behind the depth).
+    If neither is true, it indicates inconsistency → compute the ratio of such violations and return as a score.
+    """
+    # 💡 Ensure mask and depth_map are numpy arrays
+    if isinstance(mask, torch.Tensor):
+        mask = mask.cpu().numpy()
+    if isinstance(depth_map, torch.Tensor):
+        depth_map = depth_map.cpu().numpy()
+
+    proj_2d, cam_z_valid, valid_mask = project_points_to_image(pts_world, cam_R_w2c, cam_t_w2c, K)
+    mask = np.squeeze(mask)
+    depth_map = np.squeeze(depth_map)
+
+    H, W = depth_map.shape
+    if proj_2d.shape[0] == 0:
+        return 0.0
+
+    in_bounds = (proj_2d[:, 0] >= 0) & (proj_2d[:, 0] < W) & (proj_2d[:, 1] >= 0) & (proj_2d[:, 1] < H)
+    if not np.any(in_bounds):
+        return 0.0
+
+    proj_2d = proj_2d[in_bounds]
+    pred_depth = cam_z_valid[in_bounds] / 1000.0
+    proj_x = proj_2d[:, 0].astype(int)
+    proj_y = proj_2d[:, 1].astype(int)
+
+    true_depth = depth_map[proj_y, proj_x] / 1000.0  # assume mm → m
+    mask_value = mask[proj_y, proj_x] > 0
+
+    # Points that are not in the mask and also closer than depth → visibility violation
+    visibility_violation = (~mask_value) & (pred_depth < true_depth)
+
+    score = np.sum(visibility_violation)/len(pred_depth)
+    # print("Visibility violation ratio:", score)
+    return score
+
 def compute_similarity_score(proposal1, proposal2):
     similarity_score = 0.0
     # Extract transformation info
@@ -93,20 +139,41 @@ def compute_similarity_score(proposal1, proposal2):
 
     # Compute metrics
     center_dist = compute_center_distance(center1, center2)
-    # similarity_score += -center_dist
+    similarity_score += -center_dist
 
-    mask1 = proposal1['mask'].cpu().numpy()
-    mask2 = proposal2['mask'].cpu().numpy()
+    occlusion_aware_score_12 = compute_occlusion_consistency_score(pts1_world, R2, t2, K2, proposal2['mask'], proposal2['depth'])
+    occlusion_aware_score_21 = compute_occlusion_consistency_score(pts2_world, R1, t1, K1, proposal1['mask'], proposal1['depth'])
+    similarity_score += -0.1 *(occlusion_aware_score_12 + occlusion_aware_score_21)
 
-    overlap_12 = compute_mask_coverage_ratio(pts1_world, R2, t2, K2, mask2)
-    overlap_21 = compute_mask_coverage_ratio(pts2_world, R1, t1, K1, mask1)
-    similarity_score += (overlap_12 + overlap_21)
+    # mask1 = proposal1['mask'].cpu().numpy()
+    # mask2 = proposal2['mask'].cpu().numpy()
+
+    # overlap_12 = compute_mask_coverage_ratio(pts1_world, R2, t2, K2, mask2)
+    # overlap_21 = compute_mask_coverage_ratio(pts2_world, R1, t1, K1, mask1)
+    # similarity_score += (overlap_12 + overlap_21)
 
     # depth1 = proposal1['depth'].cpu().numpy()
     # depth2 = proposal2['depth'].cpu().numpy()
     # depth_score_12 = compute_depth_agreement(pts1_world, R2, t2, K2, depth2)
     # depth_score_21 = compute_depth_agreement(pts2_world, R1, t1, K1, depth1)
-    # depth_score = 0.5 * (depth_score_12 + depth_score_21)
+    # similarity_score += (depth_score_12 + depth_score_21)
     # total_similarity = -center_dist + 2.0 * mask_score
     return similarity_score
 
+def remove_outliers_lof(torch_pts, n_neighbors=10, contamination=0.02):
+    np_pts = torch_pts.cpu().numpy()
+
+    if np_pts.shape[0] < n_neighbors:
+        # 너무 적은 포인트일 경우 LOF 불가 → 그대로 반환
+        return torch_pts
+
+    lof = LocalOutlierFactor(n_neighbors=n_neighbors, contamination=contamination)
+    mask = lof.fit_predict(np_pts)
+
+    inlier_pts = np_pts[mask == 1]
+    if inlier_pts.shape[0] == 0:
+        # inlier가 하나도 없으면 fallback
+        return torch_pts
+
+    result = torch.tensor(inlier_pts, dtype=torch_pts.dtype, device=torch_pts.device)
+    return result

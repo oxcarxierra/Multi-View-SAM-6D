@@ -66,6 +66,8 @@ class BOPMultiviewTestset():
         for det in tqdm(dets, 'processing detection results'):
             scene_id = det['scene_id']
             img_id = det['image_id']
+            if scene_id not in [1,2,3,4,5,6,7,8,9,10]:
+                continue
             key = str(scene_id).zfill(6) + '_' + str(img_id).zfill(6)
             if key not in self.det_keys:
                 self.det_keys.append(key)
@@ -184,6 +186,7 @@ class BOPMultiviewTestset():
         ret_dict['obj'] = torch.IntTensor([obj_idx]).long()
         ret_dict['model'] = torch.FloatTensor(model_points)
         ret_dict['mask'] = torch.FloatTensor(raw_mask).unsqueeze(0).unsqueeze(0)
+        ret_dict['depth'] = torch.FloatTensor(depth).unsqueeze(0).unsqueeze(0)
         ret_dict['obj_id'] = torch.IntTensor([obj_id])
         ret_dict['score'] = torch.FloatTensor([score])
 
