@@ -65,6 +65,8 @@ class BOPMultiviewTestset():
 
         for det in tqdm(dets, 'processing detection results'):
             scene_id = det['scene_id']
+            if scene_id not in [1,2,3,4,5,6,7,8,9,10]:
+                continue
             img_id = det['image_id']
             key = str(scene_id).zfill(6) + '_' + str(img_id).zfill(6)
             if key not in self.det_keys:
