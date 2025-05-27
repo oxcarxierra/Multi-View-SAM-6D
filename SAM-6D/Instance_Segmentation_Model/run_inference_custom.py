@@ -125,7 +125,7 @@ def run_inference(segmentor_model, output_dir, cad_path, rgb_path, depth_path, c
     
     logging.info("Initializing template")
 
-    template_dir = "/home/ohseun/workspace/SAM-6D/SAM-6D/Data/BOP/tless/models_template/obj_000029"
+    template_dir = "/home/ohseun/workspace/SAM-6D/SAM-6D/Data/BOP/tless/BOP-Templates/tless/obj_000030"
     # os.path.join(output_dir, '../models_template/')
     num_templates = len(glob.glob(f"{template_dir}/*.npy"))
     boxes, masks, templates = [], [], []
@@ -217,14 +217,14 @@ def run_inference(segmentor_model, output_dir, cad_path, rgb_path, depth_path, c
     detections.filter(top5_indices)
 
     # 저장
-    save_path = f"{output_dir}/sam6d_results/101_detection_ism"
+    save_path = f"{output_dir}/sam6d_results/detection_ism"
     detections.save_to_file(0, 0, 0, save_path, "Custom", return_results=False)
     detections = convert_npz_to_json(idx=0, list_npz_paths=[save_path + ".npz"])
     save_json_bop23(save_path + ".json", detections)
 
     # 시각화
-    vis_img = visualize(rgb, detections, f"{output_dir}/sam6d_results/101_vis_ism.png")
-    vis_img.save(f"{output_dir}/sam6d_results/101_vis_ism.png")
+    vis_img = visualize(rgb, detections, f"{output_dir}/sam6d_results/vis_ism.png")
+    vis_img.save(f"{output_dir}/sam6d_results/vis_ism.png")
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

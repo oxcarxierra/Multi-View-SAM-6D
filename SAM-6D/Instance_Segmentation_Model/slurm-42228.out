@@ -1,0 +1,66 @@
+INFO:pytorch_lightning.utilities.rank_zero:ModelCheckpoint(save_last=True, save_top_k=-1, monitor=None) will duplicate the last checkpoint saved.
+/home/ohseun/miniconda3/envs/sam6d/lib/python3.9/site-packages/lightning_lite/plugins/environments/slurm.py:167: PossibleUserWarning: The `srun` command is available on your system but is not used. HINT: If your intention is to run Lightning on SLURM, prepend your python command with `srun` like so: srun python run_inference.py ...
+  rank_zero_warn(
+INFO:pytorch_lightning.utilities.rank_zero:Using 16bit native Automatic Mixed Precision (AMP)
+INFO:pytorch_lightning.utilities.rank_zero:GPU available: True (cuda), used: True
+INFO:pytorch_lightning.utilities.rank_zero:TPU available: False, using: 0 TPU cores
+INFO:pytorch_lightning.utilities.rank_zero:IPU available: False, using: 0 IPUs
+INFO:pytorch_lightning.utilities.rank_zero:HPU available: False, using: 0 HPUs
+INFO:lightning_lite.utilities.seed:[rank: 0] Global seed set to 2023
+INFO:lightning_lite.utilities.seed:[rank: 0] Global seed set to 2023
+Loading metaData:   0%|          | 0/4 [00:00<?, ?it/s]Loading metaData: 100%|██████████| 4/4 [00:00<00:00, 122.35it/s]
+/home/ohseun/miniconda3/envs/sam6d/lib/python3.9/site-packages/torch/utils/data/dataloader.py:561: UserWarning: This DataLoader will create 20 worker processes in total. Our suggested max number of worker in current system is 2, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  warnings.warn(_create_warning_msg(
+/home/ohseun/miniconda3/envs/sam6d/lib/python3.9/site-packages/lightning_lite/plugins/environments/slurm.py:167: PossibleUserWarning: The `srun` command is available on your system but is not used. HINT: If your intention is to run Lightning on SLURM, prepend your python command with `srun` like so: srun python run_inference.py ...
+  rank_zero_warn(
+INFO:lightning_lite.utilities.seed:[rank: 0] Global seed set to 2023
+INFO:lightning_lite.utilities.distributed:Initializing distributed: GLOBAL_RANK: 0, MEMBER: 1/1
+INFO:pytorch_lightning.utilities.rank_zero:----------------------------------------------------------------------------------------------------
+distributed_backend=nccl
+All distributed processes registered. Starting with 1 processes
+----------------------------------------------------------------------------------------------------
+
+INFO:pytorch_lightning.accelerators.cuda:LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+Testing: 0it [00:00, ?it/s]Testing:   0%|          | 0/200 [00:00<?, ?it/s]Testing DataLoader 0:   0%|          | 0/200 [00:00<?, ?it/s]Testing DataLoader 0:   0%|          | 1/200 [00:21<1:11:59, 21.71s/it]Testing DataLoader 0:   1%|          | 2/200 [00:35<57:57, 17.56s/it]  Testing DataLoader 0:   2%|▏         | 3/200 [00:48<53:04, 16.17s/it]Testing DataLoader 0:   2%|▏         | 4/200 [01:04<52:26, 16.05s/it]Testing DataLoader 0:   2%|▎         | 5/200 [01:17<50:19, 15.48s/it]Testing DataLoader 0:   3%|▎         | 6/200 [01:30<48:55, 15.13s/it]Testing DataLoader 0:   4%|▎         | 7/200 [01:44<48:02, 14.93s/it]Testing DataLoader 0:   4%|▍         | 8/200 [01:58<47:21, 14.80s/it]Testing DataLoader 0:   4%|▍         | 9/200 [02:12<46:44, 14.68s/it]Testing DataLoader 0:   5%|▌         | 10/200 [02:25<46:04, 14.55s/it]Testing DataLoader 0:   6%|▌         | 11/200 [02:37<45:14, 14.36s/it]Testing DataLoader 0:   6%|▌         | 12/200 [02:50<44:36, 14.24s/it]Testing DataLoader 0:   6%|▋         | 13/200 [03:06<44:36, 14.31s/it]Testing DataLoader 0:   7%|▋         | 14/200 [03:20<44:18, 14.29s/it]Testing DataLoader 0:   8%|▊         | 15/200 [03:35<44:21, 14.39s/it]Testing DataLoader 0:   8%|▊         | 16/200 [03:49<43:59, 14.35s/it]Testing DataLoader 0:   8%|▊         | 17/200 [04:04<43:56, 14.41s/it]Testing DataLoader 0:   9%|▉         | 18/200 [04:18<43:36, 14.38s/it]Testing DataLoader 0:  10%|▉         | 19/200 [04:34<43:32, 14.43s/it]Testing DataLoader 0:  10%|█         | 20/200 [04:48<43:12, 14.40s/it]Testing DataLoader 0:  10%|█         | 21/200 [05:03<43:04, 14.44s/it]Testing DataLoader 0:  11%|█         | 22/200 [05:17<42:51, 14.44s/it]Testing DataLoader 0:  12%|█▏        | 23/200 [05:32<42:35, 14.44s/it]Testing DataLoader 0:  12%|█▏        | 24/200 [05:45<42:11, 14.39s/it]Testing DataLoader 0:  12%|█▎        | 25/200 [05:58<41:49, 14.34s/it]Testing DataLoader 0:  13%|█▎        | 26/200 [06:11<41:28, 14.30s/it]Testing DataLoader 0:  14%|█▎        | 27/200 [06:26<41:18, 14.33s/it]Testing DataLoader 0:  14%|█▍        | 28/200 [06:40<40:57, 14.29s/it]Testing DataLoader 0:  14%|█▍        | 29/200 [06:52<40:31, 14.22s/it]Testing DataLoader 0:  15%|█▌        | 30/200 [07:05<40:08, 14.17s/it]Testing DataLoader 0:  16%|█▌        | 31/200 [07:20<40:01, 14.21s/it]Testing DataLoader 0:  16%|█▌        | 32/200 [07:33<39:41, 14.18s/it]Testing DataLoader 0:  16%|█▋        | 33/200 [07:46<39:20, 14.13s/it]Testing DataLoader 0:  17%|█▋        | 34/200 [07:58<38:58, 14.09s/it]Testing DataLoader 0:  18%|█▊        | 35/200 [08:13<38:48, 14.11s/it]Testing DataLoader 0:  18%|█▊        | 36/200 [08:26<38:29, 14.08s/it]Testing DataLoader 0:  18%|█▊        | 37/200 [08:42<38:20, 14.11s/it]Testing DataLoader 0:  19%|█▉        | 38/200 [08:56<38:05, 14.11s/it]Testing DataLoader 0:  20%|█▉        | 39/200 [09:10<37:50, 14.10s/it]Testing DataLoader 0:  20%|██        | 40/200 [09:24<37:39, 14.12s/it]Testing DataLoader 0:  20%|██        | 41/200 [09:38<37:22, 14.10s/it]Testing DataLoader 0:  21%|██        | 42/200 [09:51<37:04, 14.08s/it]Testing DataLoader 0:  22%|██▏       | 43/200 [10:04<36:47, 14.06s/it]Testing DataLoader 0:  22%|██▏       | 44/200 [10:16<36:27, 14.02s/it]Testing DataLoader 0:  22%|██▎       | 45/200 [10:29<36:09, 14.00s/it]Testing DataLoader 0:  23%|██▎       | 46/200 [10:44<35:57, 14.01s/it]Testing DataLoader 0:  24%|██▎       | 47/200 [10:59<35:46, 14.03s/it]Testing DataLoader 0:  24%|██▍       | 48/200 [11:13<35:32, 14.03s/it]Testing DataLoader 0:  24%|██▍       | 49/200 [11:27<35:17, 14.02s/it]Testing DataLoader 0:  25%|██▌       | 50/200 [11:41<35:04, 14.03s/it]Testing DataLoader 0:  26%|██▌       | 51/200 [11:56<34:54, 14.06s/it]Testing DataLoader 0:  26%|██▌       | 52/200 [12:11<34:41, 14.06s/it]Testing DataLoader 0:  26%|██▋       | 53/200 [12:25<34:28, 14.07s/it]Testing DataLoader 0:  27%|██▋       | 54/200 [12:39<34:13, 14.06s/it]Testing DataLoader 0:  28%|██▊       | 55/200 [12:52<33:55, 14.04s/it]Testing DataLoader 0:  28%|██▊       | 56/200 [13:06<33:43, 14.05s/it]Testing DataLoader 0:  28%|██▊       | 57/200 [13:21<33:30, 14.06s/it]Testing DataLoader 0:  29%|██▉       | 58/200 [13:35<33:17, 14.07s/it]Testing DataLoader 0:  30%|██▉       | 59/200 [13:50<33:04, 14.08s/it]Testing DataLoader 0:  30%|███       | 60/200 [14:04<32:50, 14.08s/it]Testing DataLoader 0:  30%|███       | 61/200 [14:18<32:35, 14.07s/it]Testing DataLoader 0:  31%|███       | 62/200 [14:31<32:20, 14.06s/it]Testing DataLoader 0:  32%|███▏      | 63/200 [14:45<32:06, 14.06s/it]Testing DataLoader 0:  32%|███▏      | 64/200 [15:01<31:55, 14.09s/it]Testing DataLoader 0:  32%|███▎      | 65/200 [15:16<31:43, 14.10s/it]Testing DataLoader 0:  33%|███▎      | 66/200 [15:30<31:28, 14.10s/it]Testing DataLoader 0:  34%|███▎      | 67/200 [15:44<31:14, 14.09s/it]Testing DataLoader 0:  34%|███▍      | 68/200 [15:58<31:00, 14.09s/it]Testing DataLoader 0:  34%|███▍      | 69/200 [16:13<30:47, 14.11s/it]Testing DataLoader 0:  35%|███▌      | 70/200 [16:26<30:31, 14.09s/it]Testing DataLoader 0:  36%|███▌      | 71/200 [16:40<30:17, 14.09s/it]Testing DataLoader 0:  36%|███▌      | 72/200 [16:53<30:02, 14.08s/it]Testing DataLoader 0:  36%|███▋      | 73/200 [17:07<29:47, 14.08s/it]Testing DataLoader 0:  37%|███▋      | 74/200 [17:22<29:34, 14.08s/it]Testing DataLoader 0:  38%|███▊      | 75/200 [17:36<29:21, 14.09s/it]Testing DataLoader 0:  38%|███▊      | 76/200 [17:51<29:08, 14.10s/it]Testing DataLoader 0:  38%|███▊      | 77/200 [18:06<28:55, 14.11s/it]Testing DataLoader 0:  39%|███▉      | 78/200 [18:21<28:43, 14.13s/it]Testing DataLoader 0:  40%|███▉      | 79/200 [18:35<28:28, 14.12s/it]Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/home/ohseun/workspace/SAM-6D/SAM-6D/Instance_Segmentation_Model/run_inference.py", line 78, in run_inference
+    trainer.test(
+  File "/home/ohseun/miniconda3/envs/sam6d/lib/python3.9/site-packages/pytorch_lightning/trainer/trainer.py", line 757, in test
+    return call._call_and_handle_interrupt(
+  File "/home/ohseun/miniconda3/envs/sam6d/lib/python3.9/site-packages/pytorch_lightning/trainer/call.py", line 36, in _call_and_handle_interrupt
+    return trainer.strategy.launcher.launch(trainer_fn, *args, trainer=trainer, **kwargs)
+  File "/home/ohseun/miniconda3/envs/sam6d/lib/python3.9/site-packages/pytorch_lightning/strategies/launchers/subprocess_script.py", line 90, in launch
+    return function(*args, **kwargs)
+  File "/home/ohseun/miniconda3/envs/sam6d/lib/python3.9/site-packages/pytorch_lightning/trainer/trainer.py", line 806, in _test_impl
+    results = self._run(model, ckpt_path=self.ckpt_path)
+  File "/home/ohseun/miniconda3/envs/sam6d/lib/python3.9/site-packages/pytorch_lightning/trainer/trainer.py", line 1061, in _run
+    results = self._run_stage()
+  File "/home/ohseun/miniconda3/envs/sam6d/lib/python3.9/site-packages/pytorch_lightning/trainer/trainer.py", line 1137, in _run_stage
+    return self._run_evaluate()
+  File "/home/ohseun/miniconda3/envs/sam6d/lib/python3.9/site-packages/pytorch_lightning/trainer/trainer.py", line 1177, in _run_evaluate
+    eval_loop_results = self._evaluation_loop.run()
+  File "/home/ohseun/miniconda3/envs/sam6d/lib/python3.9/site-packages/pytorch_lightning/loops/loop.py", line 199, in run
+    self.advance(*args, **kwargs)
+  File "/home/ohseun/miniconda3/envs/sam6d/lib/python3.9/site-packages/pytorch_lightning/loops/dataloader/evaluation_loop.py", line 152, in advance
+    dl_outputs = self.epoch_loop.run(self._data_fetcher, dl_max_batches, kwargs)
+  File "/home/ohseun/miniconda3/envs/sam6d/lib/python3.9/site-packages/pytorch_lightning/loops/loop.py", line 199, in run
+    self.advance(*args, **kwargs)
+  File "/home/ohseun/miniconda3/envs/sam6d/lib/python3.9/site-packages/pytorch_lightning/loops/epoch/evaluation_epoch_loop.py", line 137, in advance
+    output = self._evaluation_step(**kwargs)
+  File "/home/ohseun/miniconda3/envs/sam6d/lib/python3.9/site-packages/pytorch_lightning/loops/epoch/evaluation_epoch_loop.py", line 234, in _evaluation_step
+    output = self.trainer._call_strategy_hook(hook_name, *kwargs.values())
+  File "/home/ohseun/miniconda3/envs/sam6d/lib/python3.9/site-packages/pytorch_lightning/trainer/trainer.py", line 1443, in _call_strategy_hook
+    output = fn(*args, **kwargs)
+  File "/home/ohseun/miniconda3/envs/sam6d/lib/python3.9/site-packages/pytorch_lightning/strategies/ddp.py", line 369, in test_step
+    return self.model.test_step(*args, **kwargs)
+  File "/home/ohseun/workspace/SAM-6D/SAM-6D/Instance_Segmentation_Model/model/detector.py", line 416, in test_step
+    image_uv = self.project_template_to_image(best_template, pred_idx_objects, batch, detections.masks)
+  File "/home/ohseun/workspace/SAM-6D/SAM-6D/Instance_Segmentation_Model/model/detector.py", line 222, in project_template_to_image
+    translate = self.Calculate_the_query_translation(proposals, batch["depth"][0], batch["cam_intrinsic"][0], batch['depth_scale'])
+  File "/home/ohseun/workspace/SAM-6D/SAM-6D/Instance_Segmentation_Model/model/detector.py", line 244, in Calculate_the_query_translation
+    translate = depth_image_to_pointcloud_translate_torch(
+  File "/home/ohseun/workspace/SAM-6D/SAM-6D/Instance_Segmentation_Model/utils/trimesh_utils.py", line 89, in depth_image_to_pointcloud_translate_torch
+    Y = (v - K[1, 2]) * Z / K[1, 1]
+torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 464.00 MiB (GPU 0; 10.90 GiB total capacity; 9.09 GiB already allocated; 233.25 MiB free; 10.38 GiB reserved in total by PyTorch) If reserved memory is >> allocated memory try setting max_split_size_mb to avoid fragmentation.  See documentation for Memory Management and PYTORCH_CUDA_ALLOC_CONF
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
