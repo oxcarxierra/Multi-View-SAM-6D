@@ -13,9 +13,10 @@ import pickle as cPickle
 import json
 import torch
 from PIL import Image
-from utils.custom_utils import compute_similarity_score
+from utils.custom_utils import compute_similarity_score, remove_outliers_lof
 from sklearn.cluster import AffinityPropagation
 from collections import defaultdict
+from torchcpd import RigidRegistration
 # from draw_utils import draw_detections
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -28,7 +29,7 @@ sys.path.append(os.path.join(BASE_DIR, 'model', 'pointnet2'))
 detetion_paths = {
     'ycbv': '../Instance_Segmentation_Model/log/sam/result_ycbv.json',
     'tudl': '../Instance_Segmentation_Model/log/sam/result_tudl.json',
-    'tless': '../Instance_Segmentation_Model/log/sam/result_tless_scene_01-10.json',
+    'tless': '../Instance_Segmentation_Model/log/sam/result_tless_gt_01-10.json',
     'lmo': '../Instance_Segmentation_Model/log/sam/result_lmo.json',
     'itodd': '../Instance_Segmentation_Model/log/sam/result_itodd.json',
     'icbin': '../Instance_Segmentation_Model/log/sam/result_icbin.json',
@@ -158,6 +159,10 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
         dense_po, dense_fo = model.feature_extraction.get_obj_feats(all_tem, all_tem_pts, all_tem_choose)
 
     lines = []
+    cluster_summary_lines = []
+    cluster_summary_lines.append("scene_id,img_id,obj_ids\n")
+    cluster_csv_path = os.path.join(os.path.dirname(save_path), "cluster_result.csv")
+
     with tqdm(total=len(dataloder)) as t:
         for group_idx, data in enumerate(dataloder):
             print(f"=====================> Processing {group_idx+1}th multiview batch")
@@ -181,22 +186,6 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                     single_image_proposals.append(proposal)
                 multiview_datas.append(single_image_proposals)
             all_proposals = sum(multiview_datas, [])  # flatten
-
-            # multiview_datas = [[proposal1, proposal2, ...], [proposal1, proposal2, ...], ...]
-            # proposal is a object with key ['pts', 'rgb', 'rgb_choose', 'obj', 'model', 'obj_id', 'score', 'cam_K', 'cam_R_w2c', 'cam_t_w2c', 'scene_id', 'img_id', 'seg_time', 'dense_po', 'dense_fo', 'init_R', 'init_t']
-
-            # Save all_proposals to a file for debugging
-            # debug_file_path = os.path.join(cfg.log_dir, f"debug_all_proposals_scene_{data['scene_id'].item()}_batch_{group_idx}.json")
-            # with open(debug_file_path, 'w') as debug_file:
-            #     json.dump(
-            #         [{key: (value.cpu().numpy().tolist() if isinstance(value, torch.Tensor) else value) 
-            #           for key, value in proposal.items() 
-            #           if key in ['pts', 'obj', 'obj_id', 'score', 'cam_K', 'cam_R_w2c', 'cam_t_w2c', 'scene_id', 'img_id']} 
-            #          for proposal in all_proposals], 
-            #         debug_file, 
-            #         indent=4
-            #     )
-            # print(f"Saved all_proposals to {debug_file_path} for debugging.")
             
             ## Step 1: Cluster proposals
             # Compute score and make similarity matrix
@@ -209,7 +198,6 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                     S[i, j] = S[j, i] = similarity_score
 
             np.fill_diagonal(S, np.median(S))
-
             # Run Affinity Propagation clustering
             clustering = AffinityPropagation(affinity='precomputed', random_state=0)
             labels = clustering.fit_predict(S)
@@ -236,9 +224,8 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
 
             ## Step 2 : Inference multiview pose estimation for each objects with best ID
             cluster_results = {}
+            obj_ids = []
             for label, proposals_for_obj in cluster_proposals.items():
-                cluster_summary_lines = []
-                cluster_summary_lines.append("scene_id,img_id,num_clusters\n")
                 merged_pts_list = []
                 input_list = []
                 for proposal in proposals_for_obj:
@@ -254,12 +241,14 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                     continue
 
                 all_pts = torch.cat(merged_pts_list, dim=0)
-                total_points = all_pts.shape[0]
-                sampled_idx = torch.randperm(total_points)[:proposals_for_obj[0]['pts'].shape[0]]
-                merged_pts = all_pts[sampled_idx]  # shape: (2048, 3)
+                filtered_pts = remove_outliers_lof(all_pts, n_neighbors=20, contamination=0.01)
+                n_points = filtered_pts.shape[0]
+                sampled_idx = torch.randperm(n_points)[:proposals_for_obj[0]['pts'].shape[0]]
+                merged_pts = filtered_pts[sampled_idx]  # shape: (2048, 3)
 
                 cluster_obj_id = max(proposals_for_obj, key=lambda p: p['score'].item())['obj_id'].item()
                 model_for_cluster_obj_id = next(proposal['model'] for proposal in proposals_for_obj if proposal['obj_id'].item() == cluster_obj_id)
+                obj_ids.append(cluster_obj_id)
 
                 batch_inputs = {
                     'pts': [],
@@ -288,13 +277,13 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
 
                 with torch.no_grad():
                     end_points = model(batch_inputs)
-
+                
                 pred_scores = end_points['pred_pose_score']
                 best_idx = torch.argmax(pred_scores).item()
                 best_proposal = proposals_for_obj[best_idx]
                 best_proposal_obj_id = best_proposal['obj_id'].item()
-                R_final = end_points['pred_R'][best_idx]
-                t_final = end_points['pred_t'][best_idx].view(-1)
+                # R_final = end_points['pred_R'][best_idx]
+                # t_final = end_points['pred_t'][best_idx].view(-1)
 
                 R_c2w = best_proposal['cam_R_w2c'].squeeze(0).T
                 t_c2w = -R_c2w @ (best_proposal['cam_t_w2c'].squeeze(0) / 1000.0).view(3, 1)
@@ -308,11 +297,16 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                     'R': R_final,
                     't': t_final
                 }
-
+                
                 print(f"\n[Cluster {label}] Best Proposal: obj_id: {best_proposal_obj_id}, score: {pred_scores[best_idx].item():.4f}")
                 for proposal_idx in range(len(proposals_for_obj)):
                     print(f"Proposal {proposal_idx}: obj_id: {proposals_for_obj[proposal_idx]['obj_id'].item()}, score: {pred_scores[proposal_idx]:.4f}")
-
+                
+            
+            cluster_summary_lines.append(f"{all_proposals[0]['scene_id'].view(-1)[0].item()},{group_idx+1},\"{sorted(obj_ids)}\"\n")
+            print(f"Cluster summary for scene {all_proposals[0]['scene_id'].item()}, group {group_idx+1}: {sorted(obj_ids)}")
+            with open(cluster_csv_path, 'w+') as f:
+                f.writelines(cluster_summary_lines)
             # Step 3:  Write final pose of each cluster to every image in multiview_datas (sorted by img_id)
             sorted_views = sorted(multiview_datas, key=lambda x: x[0]['img_id'].item())
 
@@ -322,7 +316,6 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                 t_w2c = proposal['cam_t_w2c'].squeeze(0) / 1000.0
                 scene_id = proposal['scene_id'].item()
                 img_id = proposal['img_id'].item()
-                cluster_summary_lines.append(f"{scene_id},{img_id},{len(cluster_results)}\n")
 
                 for label, result in cluster_results.items():
                     obj_id = result['obj_id']
@@ -350,7 +343,8 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                     with open(save_path, 'w+') as f:
                         f.writelines(lines)
                     
-                    if cfg.visualization:
+                    if cfg.visualization and scene_id in [10]:
+                        print(f"Visualizing scene {scene_id}, image {img_id}, cluster {label}, object {obj_id}")
                         vis_dir = save_path.replace('result_tless.csv',f"pem_visualization/scene_{scene_id:06d}/")
                         os.makedirs(os.path.dirname(vis_dir), exist_ok=True)
                         vis_path = os.path.join(vis_dir, f"group{group_idx+1}_img{img_id}_cluster{label}_obj{obj_id}.png")
@@ -369,25 +363,13 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
 
     with open(save_path, 'w+') as f:
         f.writelines(lines)
-    cluster_csv_path = os.path.join(os.path.dirname(save_path), "cluster_result.csv")
-    with open(cluster_csv_path, 'w+') as f:
-        f.write("scene_id,img_id,num_clusters\n")
-        f.writelines(cluster_summary_lines)
 
 def visualize(rgb, pointcloud, pred_rot, pred_trans, model_points, K, save_path):
     from draw_utils import draw_detections
     img = draw_detections(rgb, pointcloud, pred_rot, pred_trans, model_points, K, color=(255, 0, 0))
     img = Image.fromarray(np.uint8(img))
     img.save(save_path)
-    prediction = Image.open(save_path)
-
-    rgb_pil = Image.fromarray(np.uint8(rgb))
-    img_np = np.array(img)
-    concat = Image.new('RGB', (img_np.shape[1] + prediction.size[0], img_np.shape[0]))
-    concat.paste(rgb_pil, (0, 0))
-    concat.paste(prediction, (img_np.shape[1], 0))
-    concat.save(save_path)
-    return concat
+    return img
 
 if __name__ == "__main__":
     cfg = init()

@@ -95,9 +95,11 @@ class Net(nn.Module):
             sparse_po, sparse_fo, geo_embedding_o,
             radius, end_points,
         )
-        # end_poins = dict_keys(['pts', 'rgb', 'rgb_choose', 'model', 'dense_po', 'dense_fo', 'init_R', 'init_t'])
+        # end_points = dict_keys(['pts', 'rgb', 'rgb_choose', 'model', 'dense_po', 'dense_fo', 'init_R', 'init_t'])
         # end_points['init_R'].shape = torch.Size([7, 3, 3])
         # end_points['init_t'].shape = torch.Size([7, 3])
+        return end_points
+        
         # fine_point_matching
         end_points = self.fine_point_matching(
             dense_pm, dense_fm, geo_embedding_m, fps_idx_m,
@@ -107,4 +109,5 @@ class Net(nn.Module):
         # end_points['pred_R'].shape = torch.Size([7, 3, 3])
         # end_points['pred_t'].shape = torch.Size([7, 3])
         # end_points['pred_pose_score'].shape = torch.Size([7])
+        
         return end_points
