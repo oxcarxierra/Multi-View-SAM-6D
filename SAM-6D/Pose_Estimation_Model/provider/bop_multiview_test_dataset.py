@@ -63,9 +63,10 @@ class BOPMultiviewTestset():
         self.dets = {}
         self.scene_to_img_ids = defaultdict(set)
 
-        # 기존 방식 유지
         for det in tqdm(dets, 'processing detection results'):
             scene_id = det['scene_id']
+            if scene_id not in [1,2,3,4,5,6,7,8,10]:
+                continue
             img_id = det['image_id']
             key = str(scene_id).zfill(6) + '_' + str(img_id).zfill(6)
             if key not in self.det_keys:
@@ -74,13 +75,13 @@ class BOPMultiviewTestset():
             self.dets[key].append(det)
             self.scene_to_img_ids[scene_id].add(img_id)
 
-        # 🎯 여기서 배치 리스트 생성
         self.batch_list = []
 
         for scene_id in sorted(self.scene_to_img_ids.keys()):
             img_ids = list(self.scene_to_img_ids[scene_id])
             if len(img_ids) % self.n_multiview != 0:
                 raise AssertionError(f"Scene {scene_id} has {len(img_ids)} images, which is not divisible by n_multiview={self.n_multiview}")
+            random.seed(42)
             random.shuffle(img_ids)
 
             for i in range(0, len(img_ids), self.n_multiview):
@@ -106,7 +107,10 @@ class BOPMultiviewTestset():
                         
             ret_dict = {}
             for key in all_instances[0].keys():
-                ret_dict[key] = torch.stack([inst[key] for inst in all_instances])
+                if key == 'mask':
+                    ret_dict[key] = [inst[key] for inst in all_instances]  # keep as list
+                else:
+                    ret_dict[key] = torch.stack([inst[key] for inst in all_instances])
             ret_dict['scene_id'] = torch.IntTensor([int(batch_key[:6])])
             ret_dict['img_id'] = torch.IntTensor([int(batch_key[7:])])
             ret_dict['seg_time'] = torch.FloatTensor([-1.0])
@@ -148,6 +152,7 @@ class BOPMultiviewTestset():
             y1, y2, x1, x2 = bbox
         else:
             return None
+        raw_mask = mask.copy()
         mask = mask[y1:y2, x1:x2]
         choose = mask.astype(np.float32).flatten().nonzero()[0]
 
@@ -180,7 +185,8 @@ class BOPMultiviewTestset():
         ret_dict['rgb_choose'] = torch.IntTensor(rgb_choose).long()
         ret_dict['obj'] = torch.IntTensor([obj_idx]).long()
         ret_dict['model'] = torch.FloatTensor(model_points)
-
+        ret_dict['mask'] = torch.FloatTensor(raw_mask).unsqueeze(0).unsqueeze(0)
+        ret_dict['depth'] = torch.FloatTensor(depth).unsqueeze(0).unsqueeze(0)
         ret_dict['obj_id'] = torch.IntTensor([obj_id])
         ret_dict['score'] = torch.FloatTensor([score])
 
