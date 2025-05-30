@@ -143,7 +143,7 @@ def compute_similarity_score(proposal1, proposal2):
 
     occlusion_aware_score_12 = compute_occlusion_consistency_score(pts1_world, R2, t2, K2, proposal2['mask'], proposal2['depth'])
     occlusion_aware_score_21 = compute_occlusion_consistency_score(pts2_world, R1, t1, K1, proposal1['mask'], proposal1['depth'])
-    similarity_score += -0.1 *(occlusion_aware_score_12 + occlusion_aware_score_21)
+    # similarity_score += -0.1 *(occlusion_aware_score_12 + occlusion_aware_score_21)
 
     # mask1 = proposal1['mask'].cpu().numpy()
     # mask2 = proposal2['mask'].cpu().numpy()

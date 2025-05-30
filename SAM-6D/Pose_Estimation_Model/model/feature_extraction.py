@@ -181,4 +181,108 @@ class ViTEncoder(nn.Module):
         return sample_pts_feats(tem_pts, tem_feat, npoint)
 
 
+class Multiview_ViTEncoder(nn.Module):
+    def __init__(self, cfg, npoint=2048):
+        super(Multiview_ViTEncoder, self).__init__()
+        self.npoint = npoint
+        self.rgb_net = ViT_AE(cfg)
 
+    def get_obj_feats(self, tem_rgb_list, tem_pts_list, tem_choose_list, npoint=None):
+        if npoint is None:
+            npoint = self.npoint
+
+        tem_feat_list =[]
+        for tem, tem_choose in zip(tem_rgb_list, tem_choose_list):
+            tem_feat_list.append(self.get_img_feats(tem, tem_choose))
+
+        tem_pts = torch.cat(tem_pts_list, dim=1)
+        tem_feat = torch.cat(tem_feat_list, dim=1)
+
+        return sample_pts_feats(tem_pts, tem_feat, npoint)
+    
+    def get_img_feats(self, img, choose):
+        return get_chosen_pixel_feats(self.rgb_net(img)[0], choose)
+
+    def forward(self, end_points):
+        V = len(end_points['rgb'])
+        all_feats = []
+        all_pts = []
+        all_pts_cam = []
+        scores = end_points['score']
+
+        for v in range(V):
+            rgb = end_points['rgb'][v]
+            rgb_choose = end_points['rgb_choose'][v]
+            
+            feat_map, _ = self.rgb_net(rgb.unsqueeze(0))
+            feat = get_chosen_pixel_feats(feat_map, rgb_choose.unsqueeze(0))  # (1, N, C)
+            all_feats.append(feat.squeeze(0))  # (N, C)
+
+            pts_cam = end_points['pts'][v]  # (N, 3)
+            R = end_points['R_w2c'][v].squeeze(0)  # (3, 3)
+            t = end_points['t_w2c'][v].squeeze(0) / 1000.0  # (3, 1)
+            pts_world = (R.T @ (pts_cam.T - t)).T  # (N, 3)
+            all_pts.append(pts_world)
+            all_pts_cam.append(pts_cam)
+
+        all_feats = torch.cat(all_feats, dim=0)  # (V*N, C)
+        all_pts = torch.cat(all_pts, dim=0)      # (V*N, 3)
+        all_pts_cam = torch.cat(all_pts_cam, dim=0)  # (V*N, 3)
+
+        voxel_size = 0.001
+        coords = (all_pts / voxel_size).round()
+        unique_coords, inverse_indices = torch.unique(coords, dim=0, return_inverse=True)
+        unique_indices = torch.unique(inverse_indices, sorted=False)
+
+        # Select one representative point per voxel
+        voxel_selected_pts = all_pts[unique_indices]
+        voxel_selected_feats = all_feats[unique_indices]
+
+        # Randomly select self.npoint points from voxel-selected candidates
+        total_candidates = voxel_selected_pts.shape[0]
+        if total_candidates > self.npoint:
+            rand_indices = torch.randperm(total_candidates)[:self.npoint]
+            sampled_pts = voxel_selected_pts[rand_indices]
+            sampled_feats = voxel_selected_feats[rand_indices]
+        else:
+            sampled_pts = voxel_selected_pts
+            sampled_feats = voxel_selected_feats
+
+        dense_pm_list = []
+        dense_fm_list = []
+
+        for v in range(V):
+            R = end_points['R_w2c'][v].squeeze(0)  # (3, 3)
+            t = end_points['t_w2c'][v].squeeze(0) / 1000.0  # (3, 1)
+            sampled_pts_cam = (R @ sampled_pts.T + t).T  # (N, 3)
+            dense_pm_list.append(sampled_pts_cam.unsqueeze(0))  # (1, N, 3)
+            dense_fm_list.append(sampled_feats.unsqueeze(0))    # (1, N, C)
+
+        dense_pm = torch.cat(dense_pm_list, dim=0)  # (V, N, 3)
+        dense_fm = torch.cat(dense_fm_list, dim=0)  # (V, N, C)
+
+        if not self.training and 'dense_po' in end_points.keys() and 'dense_fo' in end_points.keys():
+            dense_po = end_points['dense_po'].clone()
+            dense_fo = end_points['dense_fo'].clone()
+            radius = torch.norm(dense_po, dim=2).max(1)[0]
+            dense_pm = dense_pm / (radius.reshape(-1, 1, 1) + 1e-6)
+            dense_po = dense_po / (radius.reshape(-1, 1, 1) + 1e-6)
+        else:
+            tem1_rgb = end_points['tem1_rgb']
+            tem1_choose = end_points['tem1_choose']
+            tem1_pts = end_points['tem1_pts']
+            tem2_rgb = end_points['tem2_rgb']
+            tem2_choose = end_points['tem2_choose']
+            tem2_pts = end_points['tem2_pts']
+            dense_po = torch.cat([tem1_pts, tem2_pts], dim=1)
+            radius = torch.norm(dense_po, dim=2).max(1)[0]
+            dense_pm = dense_pm / (radius.reshape(-1, 1, 1) + 1e-6)
+            tem1_pts = tem1_pts / (radius.reshape(-1, 1, 1) + 1e-6)
+            tem2_pts = tem2_pts / (radius.reshape(-1, 1, 1) + 1e-6)
+            dense_po, dense_fo = self.get_obj_feats(
+                [tem1_rgb, tem2_rgb],
+                [tem1_pts, tem2_pts],
+                [tem1_choose, tem2_choose]
+            )
+
+        return dense_pm, dense_fm, dense_po, dense_fo, radius

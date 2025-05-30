@@ -29,7 +29,7 @@ sys.path.append(os.path.join(BASE_DIR, 'model', 'pointnet2'))
 detetion_paths = {
     'ycbv': '../Instance_Segmentation_Model/log/sam/result_ycbv.json',
     'tudl': '../Instance_Segmentation_Model/log/sam/result_tudl.json',
-    'tless': '../Instance_Segmentation_Model/log/sam/result_tless_gt_01-10.json',
+    'tless': '../Instance_Segmentation_Model/log/sam/result_tless_ism.json',
     'lmo': '../Instance_Segmentation_Model/log/sam/result_lmo.json',
     'itodd': '../Instance_Segmentation_Model/log/sam/result_itodd.json',
     'icbin': '../Instance_Segmentation_Model/log/sam/result_icbin.json',
@@ -256,21 +256,27 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                     'rgb_choose': [],
                     'model': [],
                     'dense_po': [],
-                    'dense_fo': []
+                    'dense_fo': [],
+                    'K': [],
+                    'score': [],
+                    'R_w2c': [],
+                    't_w2c': []
                 }
 
                 for proposal in proposals_for_obj:
                     obj = proposal['obj'][0].item()
-                    R_w2c = proposal['cam_R_w2c'].squeeze(0)
-                    t_w2c = proposal['cam_t_w2c'].squeeze(0) / 1000.0
-                    merged_pts_camera_frame = (R_w2c @ merged_pts.T + t_w2c.view(3, 1)).T
-                    batch_inputs['pts'].append(merged_pts_camera_frame.unsqueeze(0))
+                    # merged_pts_camera_frame = (R_w2c @ merged_pts.T + t_w2c.view(3, 1)).T
+                    batch_inputs['pts'].append(proposal['pts'].unsqueeze(0))
                     batch_inputs['rgb'].append(proposal['rgb'].unsqueeze(0))
                     batch_inputs['rgb_choose'].append(proposal['rgb_choose'].unsqueeze(0))
-                    # batch_inputs['model'].append(proposal['model'].unsqueeze(0))
-                    batch_inputs['model'].append(model_for_cluster_obj_id.unsqueeze(0))
+                    batch_inputs['model'].append(proposal['model'].unsqueeze(0))
+                    # batch_inputs['model'].append(model_for_cluster_obj_id.unsqueeze(0))
                     batch_inputs['dense_po'].append(dense_po[obj].unsqueeze(0))
                     batch_inputs['dense_fo'].append(dense_fo[obj].unsqueeze(0))
+                    batch_inputs['K'].append(proposal['cam_K'].unsqueeze(0))
+                    batch_inputs['score'].append(proposal['score'].view(1))
+                    batch_inputs['R_w2c'].append(proposal['cam_R_w2c'].unsqueeze(0))
+                    batch_inputs['t_w2c'].append(proposal['cam_t_w2c'].unsqueeze(0))
 
                 for key in batch_inputs:
                     batch_inputs[key] = torch.cat(batch_inputs[key], dim=0)
@@ -278,7 +284,7 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                 with torch.no_grad():
                     end_points = model(batch_inputs)
                 
-                pred_scores = end_points['pred_pose_score']
+                pred_scores = end_points['pred_pose_score'] * end_points['score']
                 best_idx = torch.argmax(pred_scores).item()
                 best_proposal = proposals_for_obj[best_idx]
                 best_proposal_obj_id = best_proposal['obj_id'].item()
@@ -343,7 +349,7 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                     with open(save_path, 'w+') as f:
                         f.writelines(lines)
                     
-                    if cfg.visualization and scene_id in [10]:
+                    if cfg.visualization and scene_id in [1]:
                         print(f"Visualizing scene {scene_id}, image {img_id}, cluster {label}, object {obj_id}")
                         vis_dir = save_path.replace('result_tless.csv',f"pem_visualization/scene_{scene_id:06d}/")
                         os.makedirs(os.path.dirname(vis_dir), exist_ok=True)
@@ -356,6 +362,7 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                         model_points = mesh.sample(512).astype(np.float32)
                         K_ = proposal['cam_K'].cpu().numpy()
                         vis_img = visualize(img, [merged_pts_camera_frame.cpu().numpy()], [R_img.cpu().numpy()], [t_img.cpu().numpy()], model_points, K_, vis_path)
+            t.update(1)
                     
             # Clear data structures
             cluster_proposals.clear()
@@ -369,6 +376,8 @@ def visualize(rgb, pointcloud, pred_rot, pred_trans, model_points, K, save_path)
     img = draw_detections(rgb, pointcloud, pred_rot, pred_trans, model_points, K, color=(255, 0, 0))
     img = Image.fromarray(np.uint8(img))
     img.save(save_path)
+    print(f"Visualization saved to {save_path}")
+    print(img)
     return img
 
 if __name__ == "__main__":
