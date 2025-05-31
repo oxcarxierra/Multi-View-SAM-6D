@@ -42,7 +42,8 @@ inv_rgb_transform = T.Compose(
         ]
     )
 
-def visualize(rgb, detections, save_path="tmp.png"):
+def visualize(rgb, detections, output_dir, obj_idx, pov_idx):
+    save_path = f"{output_dir}/{pov_idx}_{obj_idx}_vis_ism.png"
     img = rgb.copy()
     gray = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
     img = cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
@@ -55,6 +56,14 @@ def visualize(rgb, detections, save_path="tmp.png"):
             best_score = det['score']
             best_det = detections[mask_idx]
 
+    # Decode predicted segmentation mask from RLE format
+    pred_mask = rle_to_mask(best_det["segmentation"]).astype(np.uint8)
+    # save_path_mask = os.path.join(output_dir, "sam6d_results", "104_pred_mask.png")
+    save_path_mask = f"{output_dir}/{pov_idx}_{obj_idx}_mask_ism"
+    pred_mask = pred_mask * 255
+    # cv2.imwrite(save_path_mask, pred_mask)
+    pred_mask = Image.fromarray(pred_mask)
+    pred_mask.save(save_path_mask + ".png")
     mask = rle_to_mask(best_det["segmentation"])
     edge = canny(mask)
     edge = binary_dilation(edge, np.ones((2, 2)))
@@ -124,8 +133,13 @@ def run_inference(segmentor_model, output_dir, cad_path, rgb_path, depth_path, c
         
     
     logging.info("Initializing template")
+    scene_idx = "01"
+    pov_idx = "001"
+    obj_idx = "025"
+    os.makedirs(f"{output_dir}/sam6d_results/{scene_idx}", exist_ok=True)
+    print(f"Output directory: {output_dir}/sam6d_results/{scene_idx}")
 
-    template_dir = "/home/ohseun/workspace/SAM-6D/SAM-6D/Data/BOP/tless/models_template/obj_000029"
+    template_dir = f"/home/obuset/SAM-6D/SAM-6D/Data/BOP-Templates/tless/obj_000{obj_idx}"
     # os.path.join(output_dir, '../models_template/')
     num_templates = len(glob.glob(f"{template_dir}/*.npy"))
     boxes, masks, templates = [], [], []
@@ -217,14 +231,16 @@ def run_inference(segmentor_model, output_dir, cad_path, rgb_path, depth_path, c
     detections.filter(top5_indices)
 
     # 저장
-    save_path = f"{output_dir}/sam6d_results/101_detection_ism"
+    output_dir = f"{output_dir}/sam6d_results/{scene_idx}"
+    save_path = f"{output_dir}/{pov_idx}_{obj_idx}_detection_ism"
     detections.save_to_file(0, 0, 0, save_path, "Custom", return_results=False)
     detections = convert_npz_to_json(idx=0, list_npz_paths=[save_path + ".npz"])
     save_json_bop23(save_path + ".json", detections)
 
     # 시각화
-    vis_img = visualize(rgb, detections, f"{output_dir}/sam6d_results/101_vis_ism.png")
-    vis_img.save(f"{output_dir}/sam6d_results/101_vis_ism.png")
+    vis_img = visualize(rgb, detections, output_dir, obj_idx, pov_idx)
+    vis_img.save(f"{output_dir}/{pov_idx}_{obj_idx}_vis_ism.png")
+    print(" --- IMAGES SAVED --- ")
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

@@ -47,7 +47,7 @@ class BOPMultiviewTestset():
             model_path = 'models'
         self.template_folder = os.path.join(cfg.template_dir, eval_dataset_name)
 
-        self.data_folder = os.path.join(self.data_dir, eval_dataset_name, 'test_primesense')
+        self.data_folder = os.path.join(self.data_dir, eval_dataset_name, 'test')
         self.model_folder = os.path.join(self.data_dir, eval_dataset_name, model_path)
         obj, obj_ids = load_objs(self.model_folder, self.template_folder, sample_num=self.n_sample_model_point, n_template_view=self.n_template_view)
         obj_idxs = {obj_id: idx for idx, obj_id in enumerate(obj_ids)}

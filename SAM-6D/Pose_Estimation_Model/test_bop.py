@@ -23,12 +23,14 @@ sys.path.append(os.path.join(BASE_DIR, 'model', 'pointnet2'))
 detetion_paths = {
     'ycbv': '../Instance_Segmentation_Model/log/sam/result_ycbv.json',
     'tudl': '../Instance_Segmentation_Model/log/sam/result_tudl.json',
-    'tless': '../Instance_Segmentation_Model/log/sam/result_tless_gt_01-10.json',
+    'tless': '../Instance_Segmentation_Model/log/sam/result_tless_scene_01-10.json',
     'lmo': '../Instance_Segmentation_Model/log/sam/result_lmo.json',
     'itodd': '../Instance_Segmentation_Model/log/sam/result_itodd.json',
     'icbin': '../Instance_Segmentation_Model/log/sam/result_icbin.json',
     'hb': '../Instance_Segmentation_Model/log/sam/result_hb.json'
 }
+
+# 'tless': '../Instance_Segmentation_Model/log/sam/result_tless_gt_part2_2.json',
 
 def print_gpu_memory(stage=""):
     allocated = torch.cuda.memory_allocated() / 1024 / 1024
@@ -225,7 +227,7 @@ if __name__ == "__main__":
             save_path = os.path.join(cfg.log_dir, dataset_name + '_eval_iter' + str(cfg.test_iter).zfill(6))
             if not os.path.isdir(save_path):
                 os.makedirs(save_path)
-            save_path = os.path.join(save_path,'result_' + dataset_name +'.csv')
+            save_path = os.path.join(save_path,'result_scene_01-10_' + dataset_name +'.csv')
             test(model, cfg, save_path, dataset_name, detetion_paths[dataset_name])
 
             print('saving to {} ...'.format(save_path))
@@ -238,13 +240,9 @@ if __name__ == "__main__":
         save_path = os.path.join(cfg.log_dir, dataset_name + '_eval_iter' + str(cfg.test_iter).zfill(6))
         if not os.path.isdir(save_path):
             os.makedirs(save_path)
-        save_path = os.path.join(save_path,'result_' + dataset_name +'.csv')
+        save_path = os.path.join(save_path,'result_scene_01-10_' + dataset_name +'.csv')
         test(model, cfg,  save_path, dataset_name, detetion_paths[dataset_name])
 
         print('saving to {} ...'.format(save_path))
         print('finishing evaluation on {} ...'.format(dataset_name))
-
-
-
-
 

@@ -24,6 +24,7 @@ def run_inference(cfg: DictConfig):
         logging.info(f"Slurm config: {num_gpus} gpus,  {num_nodes} nodes")
     trainer = instantiate(cfg.machine.trainer)
 
+    print("Passing config to the model")
     default_ref_dataloader_config = cfg.data.reference_dataloader
     default_query_dataloader_config = cfg.data.query_dataloader
 
@@ -31,14 +32,14 @@ def run_inference(cfg: DictConfig):
     ref_dataloader_config = default_ref_dataloader_config.copy()
 
     if cfg.dataset_name in ["hb", "tless"]:
-        query_dataloader_config.split = "test_primesense"
+        query_dataloader_config.split = "test"
     else:
         query_dataloader_config.split = "test"
     query_dataloader_config.root_dir += f"{cfg.dataset_name}"
     query_dataset = instantiate(query_dataloader_config)
     
     # from torch.utils.data import Subset
-    # query_dataset = Subset(query_dataset, list(range(100)))  # 안전한 방식
+    # query_dataset = Subset(query_dataset, list(range(100)))  # 안전한 방식 - secure way
 
     logging.info("Initializing model")
     model = instantiate(cfg.model)
@@ -73,7 +74,7 @@ def run_inference(cfg: DictConfig):
     agg_function = cfg.model.matching_config.aggregation_function
     rendering_type = cfg.model.onboarding_config.rendering_type
     level_template = cfg.model.onboarding_config.level_templates
-    model.name_prediction_file = f"result_{cfg.dataset_name}_scene_01-10"
+    model.name_prediction_file = f"result_{cfg.dataset_name}_scene_17"
     logging.info(f"Loading dataloader for {cfg.dataset_name} done!")
     trainer.test(
         model,

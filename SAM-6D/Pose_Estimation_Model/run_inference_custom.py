@@ -112,7 +112,6 @@ def visualize(rgb, pred_rot, pred_trans, model_points, K, save_path):
     concat.paste(prediction, (img_np.shape[1], 0))
     return concat
 
-
 def _get_template(path, cfg, tem_index=1):
     rgb_path = os.path.join(path, 'rgb_'+str(tem_index)+'.png')
     mask_path = os.path.join(path, 'mask_'+str(tem_index)+'.png')
@@ -159,6 +158,9 @@ def get_templates(path, cfg):
         all_tem_choose.append(torch.IntTensor(tem_choose).long().unsqueeze(0).cuda())
         all_tem_pts.append(torch.FloatTensor(tem_pts).unsqueeze(0).cuda())
     return all_tem, all_tem_pts, all_tem_choose
+
+def get_test_data_multi(rgb_path, depth_path, cam_path, cad_path, seg_path, det_score_thresh, cfg):
+    return 
 
 def get_test_data(rgb_path, depth_path, cam_path, cad_path, seg_path, det_score_thresh, cfg):
     dets = []
@@ -262,30 +264,51 @@ if __name__ == "__main__":
         cfg.rgb_path, cfg.depth_path, cfg.cam_path, cfg.cad_path, cfg.seg_path, 
         cfg.det_score_thresh, cfg.test_dataset
     )
+    # input_data, img, model_points, detections = get_test_data_multi([
+    #     (cfg.rgb_path_1, cfg.depth_path_1, cfg.cam_path_1, cfg.seg_path_1),
+    #     (cfg.rgb_path_2, cfg.depth_path_2, cfg.cam_path_2, cfg.seg_path_2),
+    # ], cfg.cad_path, cfg.det_score_thresh, cfg.test_dataset)
 
     import torchvision.transforms.functional as TF
     from torchvision.utils import save_image
 
-    # score로 정렬할 인덱스 추출
+    # score로 정렬할 인덱스 추출 - Extracting an index to sort by score
     scores = input_data['score'].cpu().numpy()
     print("total proposals: ", len(scores))
-    sorted_indices = np.argsort(-scores)  # 내림차순 정렬
-    # 가장 높은 score 하나만 선택
+    sorted_indices = np.argsort(-scores)  # 내림차순 정렬 - Sort in descending order
+    # 가장 높은 score 하나만 선택 - Select only one highest score
     top_idx = sorted_indices[0]
 
     cloud_tensor = input_data['pts'][top_idx]
     rgb_tensor = input_data['rgb'][top_idx]
     score = scores[top_idx]
 
-    # point cloud 저장
+    pov_idx = "000"
+    obj_idx = "029"
+    GT = "not"
+
+    if GT == "GT": 
+        os.makedirs(f"{cfg.output_dir}/sam6d_results/GT_PEM/vis_pem_{pov_idx}_{obj_idx}_all", exist_ok=True)
+    else:
+        os.makedirs(f"{cfg.output_dir}/sam6d_results/vis_pem_{pov_idx}_{obj_idx}_all", exist_ok=True)
+
+    # point cloud 저장 - saving
     cloud_np = cloud_tensor.detach().cpu().numpy()
-    np.save(os.path.join(cfg.output_dir, f"sam6d_results/101_score{score:.3f}.npy"), cloud_np)
 
-    # RGB 이미지 저장
+    if GT == "GT": 
+        # np.save(os.path.join(cfg.output_dir, f"sam6d_results/GT_PEM/{pov_idx}_{obj_idx}_score{score:.3f}.npy"), cloud_np)
+        np.save(os.path.join(cfg.output_dir, f"sam6d_results/GT_PEM/vis_pem_{pov_idx}_{obj_idx}_all/{pov_idx}_{obj_idx}_score{score:.3f}.npy"), cloud_np)
+    else:
+        np.save(os.path.join(cfg.output_dir, f"sam6d_results/vis_pem_{pov_idx}_{obj_idx}_all/{pov_idx}_{obj_idx}_score{score:.3f}.npy"), cloud_np)
+
+    # RGB 이미지 저장 - Saving images
     rgb_img = TF.to_pil_image(rgb_tensor.cpu())
-    rgb_img.save(os.path.join(cfg.output_dir, f"sam6d_results/101_score{score:.3f}.png"))
+    if GT == "GT": 
+        rgb_img.save(os.path.join(cfg.output_dir, f"sam6d_results/GT_PEM/vis_pem_{pov_idx}_{obj_idx}_all/{pov_idx}_{obj_idx}_score{score:.3f}.png"))
+    else:
+        rgb_img.save(os.path.join(cfg.output_dir, f"sam6d_results/vis_pem_{pov_idx}_{obj_idx}_all/{pov_idx}_{obj_idx}_score{score:.3f}.png"))
 
-    if False:
+    if True:
         # model
         print("=> creating model ...")
         MODEL = importlib.import_module(cfg.model_name)
@@ -297,7 +320,7 @@ if __name__ == "__main__":
 
         print("=> extracting templates ...")
         # tem_path = os.path.join(cfg.output_dir, 'templates')
-        tem_path = "/home/ohseun/workspace/SAM-6D/SAM-6D/Data/BOP/tless/models_template/obj_000029"
+        tem_path = f"/home/obuset/SAM-6D/SAM-6D/Data/BOP-Templates/tless/obj_000{obj_idx}"
         all_tem, all_tem_pts, all_tem_choose = get_templates(tem_path, cfg.test_dataset)
         with torch.no_grad():
             all_tem_pts, all_tem_feat = model.feature_extraction.get_obj_feats(all_tem, all_tem_pts, all_tem_choose)
@@ -319,25 +342,37 @@ if __name__ == "__main__":
         pred_trans = out['pred_t'].detach().cpu().numpy() * 1000
 
         print("=> saving results ...")
-        os.makedirs(f"{cfg.output_dir}/sam6d_results", exist_ok=True)
+        if GT == "GT": 
+            os.makedirs(f"{cfg.output_dir}/sam6d_results/GT_PEM/vis_pem_{pov_idx}_{obj_idx}_all", exist_ok=True)
+        else:
+            os.makedirs(f"{cfg.output_dir}/sam6d_results/vis_pem_{pov_idx}_{obj_idx}_all", exist_ok=True)
         for idx, det in enumerate(detections):
             detections[idx]['score'] = float(pose_scores[idx])
             detections[idx]['R'] = list(pred_rot[idx].tolist())
             detections[idx]['t'] = list(pred_trans[idx].tolist())
 
-        with open(os.path.join(f"{cfg.output_dir}/sam6d_results", 'detection_pem.json'), "w") as f:
-            json.dump(detections, f)
+        if GT == "GT": 
+            with open(os.path.join(f"{cfg.output_dir}/sam6d_results/GT_PEM/vis_pem_{pov_idx}_{obj_idx}_all", f'{pov_idx}_{obj_idx}_detection_pem.json'), "w") as f:
+                json.dump(detections, f)
+                print(f"Saved GT PEM results to {cfg.output_dir}/sam6d_results/GT_PEM/vis_pem_{pov_idx}_{obj_idx}_all/{pov_idx}_{obj_idx}_detection_pem.json")
+        else:
+            with open(os.path.join(f"{cfg.output_dir}/sam6d_results/vis_pem_{pov_idx}_{obj_idx}_all", f'{pov_idx}_{obj_idx}_detection_pem.json'), "w") as f:
+                json.dump(detections, f)
+                print(f"Saved PEM results to {cfg.output_dir}/sam6d_results/vis_pem_{pov_idx}_{obj_idx}_all/{pov_idx}_{obj_idx}_detection_pem.json")
 
         print("=> visualizating ...")
-        # 정렬된 인덱스
-        sorted_idx = np.argsort(-pose_scores)  # 내림차순
+        # 정렬된 인덱스 - Sorted indexes
+        sorted_idx = np.argsort(-pose_scores)  # 내림차순 - Descending order
 
-        # 전체 시각화 저장 디렉토리 생성
-        save_dir = os.path.join(cfg.output_dir, "sam6d_results", "vis_pem_all")
+        # 전체 시각화 저장 디렉토리 생성 - Create a directory to save all visualizations    
+        if GT == "GT": 
+            save_dir = os.path.join(cfg.output_dir, "sam6d_results", "GT_PEM", f"vis_pem_{pov_idx}_{obj_idx}_ranks")
+        else:
+            save_dir = os.path.join(cfg.output_dir, "sam6d_results", f"vis_pem_{pov_idx}_{obj_idx}_ranks")
         os.makedirs(save_dir, exist_ok=True)
 
         for rank, idx in enumerate(sorted_idx):
-            save_path = os.path.join(save_dir, f"vis_pem_rank{rank}_score{pose_scores[idx]:.3f}.png")
+            save_path = os.path.join(save_dir, f"{pov_idx}_{obj_idx}_vis_pem_rank{rank}_score{pose_scores[idx]:.3f}.png")
             R = pred_rot[idx]     # shape: (3,3)
             t = pred_trans[idx]   # shape: (3,)
             K_ = input_data['K'].detach().cpu().numpy()[idx]  # shape: (3,3)
@@ -350,4 +385,3 @@ if __name__ == "__main__":
         # K = input_data['K'].detach().cpu().numpy()[valid_masks]
         # vis_img = visualize(img, pred_rot[valid_masks], pred_trans[valid_masks], model_points*1000, K, save_path)
         # vis_img.save(save_path)
-

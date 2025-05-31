@@ -167,7 +167,7 @@ class Instance_Segmentation_Model(pl.LightningModule):
             self.ref_data["pointcloud"] = torch.load(pointcloud_path, map_location="cuda:0").to(self.device)
         else:
             # import pdb; pdb.set_trace()
-            mesh_path ="/home/ohseun/workspace/SAM-6D/SAM-6D/Data/BOP/tless/models"
+            mesh_path ="/home/obuset/SAM-6D/SAM-6D/Data/BOP/tless/models"
             # mesh_path = osp.join(self.ref_dataset.template_dir, "../../tless/models")
             if not os.path.exists(mesh_path):
                 raise Exception("Can not find the mesh path.")
