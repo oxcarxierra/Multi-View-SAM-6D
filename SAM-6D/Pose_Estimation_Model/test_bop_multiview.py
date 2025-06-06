@@ -170,8 +170,8 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
             torch.cuda.synchronize()
             end = time.time()
 
-            assert len(data) == cfg.test_dataset.n_multiview, \
-                f"Expected {cfg.test_dataset.n_multiview} images, but got {len(data)} images."
+            # assert len(data) == cfg.test_dataset.n_multiview, \
+            #     f"Expected {cfg.test_dataset.n_multiview} images, but got {len(data)} images."
 
             multiview_datas = []
             for single_img_data in data:

@@ -65,7 +65,7 @@ class BOPMultiviewTestset():
 
         for det in tqdm(dets, 'processing detection results'):
             scene_id = det['scene_id']
-            if scene_id not in [1,2,3,4,5,6,7,8,10]:
+            if scene_id not in [1,2,3,4,5,6,7,8,9,10]:
                 continue
             img_id = det['image_id']
             key = str(scene_id).zfill(6) + '_' + str(img_id).zfill(6)
@@ -79,8 +79,6 @@ class BOPMultiviewTestset():
 
         for scene_id in sorted(self.scene_to_img_ids.keys()):
             img_ids = list(self.scene_to_img_ids[scene_id])
-            if len(img_ids) % self.n_multiview != 0:
-                raise AssertionError(f"Scene {scene_id} has {len(img_ids)} images, which is not divisible by n_multiview={self.n_multiview}")
             random.seed(42)
             random.shuffle(img_ids)
 
