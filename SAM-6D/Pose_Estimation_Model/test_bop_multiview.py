@@ -19,6 +19,9 @@ from collections import defaultdict
 from torchcpd import RigidRegistration
 # from draw_utils import draw_detections
 
+MAX_PROPOSALS = 10
+BATCH_LIMIT = 4  # adjust if needed
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(BASE_DIR, 'provider'))
 sys.path.append(os.path.join(BASE_DIR, 'utils'))
@@ -250,41 +253,72 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                 model_for_cluster_obj_id = next(proposal['model'] for proposal in proposals_for_obj if proposal['obj_id'].item() == cluster_obj_id)
                 obj_ids.append(cluster_obj_id)
 
-                batch_inputs = {
-                    'pts': [],
-                    'rgb': [],
-                    'rgb_choose': [],
-                    'model': [],
-                    'dense_po': [],
-                    'dense_fo': [],
-                    'K': [],
-                    'score': [],
-                    'R_w2c': [],
-                    't_w2c': []
+                # === PEM Inference with Memory-Safe Batching ===
+                cluster_outputs = {
+                    'pred_pose_score': [],
+                    'pred_R': [],
+                    'pred_t': [],
+                    'score': []
                 }
 
-                for proposal in proposals_for_obj:
-                    obj = proposal['obj'][0].item()
-                    # merged_pts_camera_frame = (R_w2c @ merged_pts.T + t_w2c.view(3, 1)).T
-                    batch_inputs['pts'].append(proposal['pts'].unsqueeze(0))
-                    batch_inputs['rgb'].append(proposal['rgb'].unsqueeze(0))
-                    batch_inputs['rgb_choose'].append(proposal['rgb_choose'].unsqueeze(0))
-                    batch_inputs['model'].append(proposal['model'].unsqueeze(0))
-                    # batch_inputs['model'].append(model_for_cluster_obj_id.unsqueeze(0))
-                    batch_inputs['dense_po'].append(dense_po[obj].unsqueeze(0))
-                    batch_inputs['dense_fo'].append(dense_fo[obj].unsqueeze(0))
-                    batch_inputs['K'].append(proposal['cam_K'].unsqueeze(0))
-                    batch_inputs['score'].append(proposal['score'].view(1))
-                    batch_inputs['R_w2c'].append(proposal['cam_R_w2c'].unsqueeze(0))
-                    batch_inputs['t_w2c'].append(proposal['cam_t_w2c'].unsqueeze(0))
+                used_proposals = []
+                N = len(proposals_for_obj)
 
-                for key in batch_inputs:
-                    batch_inputs[key] = torch.cat(batch_inputs[key], dim=0)
+                for i in range(0, N, BATCH_LIMIT):
 
-                with torch.no_grad():
-                    end_points = model(batch_inputs)
+                    batch_proposals = proposals_for_obj[i:i + BATCH_LIMIT]
+                    used_proposals.extend(batch_proposals)
+
+                    batch_inputs = {
+                        'pts': [],
+                        'rgb': [],
+                        'rgb_choose': [],
+                        'model': [],
+                        'dense_po': [],
+                        'dense_fo': [],
+                        'K': [],
+                        'score': [],
+                        'R_w2c': [],
+                        't_w2c': []
+                    }
+
+                    for proposal in batch_proposals:                    
+                        obj = proposal['obj'][0].item()
+                        # merged_pts_camera_frame = (R_w2c @ merged_pts.T + t_w2c.view(3, 1)).T
+                        batch_inputs['pts'].append(proposal['pts'].unsqueeze(0))
+                        batch_inputs['rgb'].append(proposal['rgb'].unsqueeze(0))
+                        batch_inputs['rgb_choose'].append(proposal['rgb_choose'].unsqueeze(0))
+                        batch_inputs['model'].append(proposal['model'].unsqueeze(0))
+                        # batch_inputs['model'].append(model_for_cluster_obj_id.unsqueeze(0))
+                        batch_inputs['dense_po'].append(dense_po[obj].unsqueeze(0))
+                        batch_inputs['dense_fo'].append(dense_fo[obj].unsqueeze(0))
+                        batch_inputs['K'].append(proposal['cam_K'].unsqueeze(0))
+                        batch_inputs['score'].append(proposal['score'].view(1))
+                        batch_inputs['R_w2c'].append(proposal['cam_R_w2c'].unsqueeze(0))
+                        batch_inputs['t_w2c'].append(proposal['cam_t_w2c'].unsqueeze(0))
+
+                    for key in batch_inputs:
+                        batch_inputs[key] = torch.cat(batch_inputs[key], dim=0)
+
+                    with torch.no_grad():
+                        sub_output = model(batch_inputs)
+
+                    for k in cluster_outputs:
+                        cluster_outputs[k].append(sub_output[k].cpu())  # keep on CPU
+
+                    del batch_inputs, sub_output
+                    torch.cuda.empty_cache()
+
+                # === Reassemble PEM outputs and find best
+                end_points = {k: torch.cat(v, dim=0) for k, v in cluster_outputs.items()}
                 
-                pred_scores = end_points['pred_pose_score'] * end_points['score']
+                # Debug check
+                assert len(used_proposals) == end_points['pred_pose_score'].shape[0], \
+                    f"Mismatched proposal/output sizes: {len(used_proposals)} vs {end_points['pred_pose_score'].shape[0]}"
+
+                # Convert only once, store result
+                pred_scores = end_points['pred_pose_score'].cuda() * end_points['score'].cuda()
+
                 best_idx = torch.argmax(pred_scores).item()
                 best_proposal = proposals_for_obj[best_idx]
                 best_proposal_obj_id = best_proposal['obj_id'].item()
@@ -293,8 +327,8 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
 
                 R_c2w = best_proposal['cam_R_w2c'].squeeze(0).T
                 t_c2w = -R_c2w @ (best_proposal['cam_t_w2c'].squeeze(0) / 1000.0).view(3, 1)
-                R_final = R_c2w @ end_points['pred_R'][best_idx]
-                t_final = (R_c2w @ end_points['pred_t'][best_idx].view(3, 1) + t_c2w).view(-1)
+                R_final = R_c2w @ end_points['pred_R'].cuda()[best_idx]
+                t_final = (R_c2w @ end_points['pred_t'].cuda()[best_idx].view(3, 1) + t_c2w).view(-1)
                 
                 cluster_results[label] = {
                     'obj_id': best_proposal_obj_id,
