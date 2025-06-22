@@ -57,7 +57,7 @@ cd SAM-6D
 sh demo.sh
 ```
 
-To use pre-acquired results from Instance Segmentation Model, download result file from [here](https://drive.google.com/file/d/19AUDIn_5Uwu3MvKjQLbOk2SANPAaTyyw/view?usp=sharing) and place in `Instance_Segmentation_Model/log/sam/result_tless_ism.json`.
+To use pre-acquired results from Instance Segmentation Model, download result file from [here](https://drive.google.com/file/d/1gZw8sRvr-8C2gbzO8yfg5151Sw-_Wvx3/view?usp=sharing) and place in `Instance_Segmentation_Model/log/sam/result_tless_ism.json`.
 This result was obtained using SAM on a GTX 1080 GPU.
 
 ```bash
