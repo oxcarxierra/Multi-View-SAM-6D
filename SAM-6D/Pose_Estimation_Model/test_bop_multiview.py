@@ -349,7 +349,7 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                     with open(save_path, 'w+') as f:
                         f.writelines(lines)
                     
-                    if cfg.visualization and scene_id in [1]:
+                    if cfg.visualization:
                         print(f"Visualizing scene {scene_id}, image {img_id}, cluster {label}, object {obj_id}")
                         vis_dir = save_path.replace('result_tless.csv',f"pem_visualization/scene_{scene_id:06d}/")
                         os.makedirs(os.path.dirname(vis_dir), exist_ok=True)

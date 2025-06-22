@@ -143,28 +143,27 @@ def compute_similarity_score(proposal1, proposal2):
 
     occlusion_aware_score_12 = compute_occlusion_consistency_score(pts1_world, R2, t2, K2, proposal2['mask'], proposal2['depth'])
     occlusion_aware_score_21 = compute_occlusion_consistency_score(pts2_world, R1, t1, K1, proposal1['mask'], proposal1['depth'])
-    # similarity_score += -0.1 *(occlusion_aware_score_12 + occlusion_aware_score_21)
+    similarity_score += -0.1 *(occlusion_aware_score_12 + occlusion_aware_score_21)
 
-    # mask1 = proposal1['mask'].cpu().numpy()
-    # mask2 = proposal2['mask'].cpu().numpy()
+    mask1 = proposal1['mask'].cpu().numpy()
+    mask2 = proposal2['mask'].cpu().numpy()
 
-    # overlap_12 = compute_mask_coverage_ratio(pts1_world, R2, t2, K2, mask2)
-    # overlap_21 = compute_mask_coverage_ratio(pts2_world, R1, t1, K1, mask1)
-    # similarity_score += (overlap_12 + overlap_21)
+    overlap_12 = compute_mask_coverage_ratio(pts1_world, R2, t2, K2, mask2)
+    overlap_21 = compute_mask_coverage_ratio(pts2_world, R1, t1, K1, mask1)
+    similarity_score += 0.1 * (overlap_12 + overlap_21)
 
-    # depth1 = proposal1['depth'].cpu().numpy()
-    # depth2 = proposal2['depth'].cpu().numpy()
-    # depth_score_12 = compute_depth_agreement(pts1_world, R2, t2, K2, depth2)
-    # depth_score_21 = compute_depth_agreement(pts2_world, R1, t1, K1, depth1)
-    # similarity_score += (depth_score_12 + depth_score_21)
-    # total_similarity = -center_dist + 2.0 * mask_score
+    depth1 = proposal1['depth'].cpu().numpy()
+    depth2 = proposal2['depth'].cpu().numpy()
+    depth_score_12 = compute_depth_agreement(pts1_world, R2, t2, K2, depth2)
+    depth_score_21 = compute_depth_agreement(pts2_world, R1, t1, K1, depth1)
+    similarity_score += 0.1 * (depth_score_12 + depth_score_21)
+
     return similarity_score
 
 def remove_outliers_lof(torch_pts, n_neighbors=10, contamination=0.02):
     np_pts = torch_pts.cpu().numpy()
 
     if np_pts.shape[0] < n_neighbors:
-        # 너무 적은 포인트일 경우 LOF 불가 → 그대로 반환
         return torch_pts
 
     lof = LocalOutlierFactor(n_neighbors=n_neighbors, contamination=contamination)
@@ -172,7 +171,6 @@ def remove_outliers_lof(torch_pts, n_neighbors=10, contamination=0.02):
 
     inlier_pts = np_pts[mask == 1]
     if inlier_pts.shape[0] == 0:
-        # inlier가 하나도 없으면 fallback
         return torch_pts
 
     result = torch.tensor(inlier_pts, dtype=torch_pts.dtype, device=torch_pts.device)
