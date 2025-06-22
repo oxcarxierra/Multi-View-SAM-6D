@@ -1,15 +1,36 @@
 # <p align="center"> <font color=#008000>Multi-view SAM-6D</font>: Improving Zero-Shot 6D Object Pose Estimation via Multi-View Aggregation</p>
 
-Coursework from 3D Vision, Spring 2025, ETH Zürich
+| This is a coursework project for the 3D Vision course (Spring 2025) at ETH Zürich.
 
-Forked from : https://github.com/JiehongLin/SAM-6D
+
+## 🔍 Project Overview
+
+![System Architecture](images/multiview_architecture_diagram.png)
+
+Multi-view SAM-6D is based on the original SAM-6D framework and extends it to a multi-view setting.
+
+Key features:
+- Multi-view fusion: Leverages multiple viewpoints to reduce occlusion and misclassification errors.
+- Architecture-level improvement: No retraining of the original SAM-6D modules is required.
+- Improved performance: Outperforms single-view methods, especially in cluttered or symmetric scenes.
+
+The core implementation of our multi-view extension can be found in the following files:
+
+- `Pose_Estimation_Model/test_bop_multiview.py` 
+- `Pose_Estimation_Model/provider/bop_multiview_test_dataset.py`
+- `Pose_Estimation_Model/model/multiview_pose_estimation_model.py`
+- `Pose_Estimation_Model/model/feature_extraction.py`
+
+
+<center>
+    <img src="images/multiview-sam6d-result.png" alt="Multiview-SAM-6D-Result" width="50%"/>
+</center>
 
 ## Version check
 Validated with following environment: 
 - CUDA 11.8
 - python 3.9.6
 - pytorch 2.0.0+cu117
-
 
 ## Getting Started
 
@@ -20,32 +41,39 @@ git clone https://github.com/oxcarxierra/SAM-6D.git
 conda create env sam6d python=3.9.6
 cd SAM-6D && pip install requirements.txt
 ```
+
 Install the environment and download the model checkpoints:
 ```
 sh prepare.sh
 ```
 
-### 2. Evaluation on the custom data
-Fix the first lines in demo.sh 
-```
-# run inference
+Also, for the demo run use example data that can be downloaded from [here](https://drive.google.com/file/d/1xvcLY7Y7xjXKOSCwrHqQV3OdssjMuPOp/view?usp=sharing).
+
+### 2. Demo run
+To run both Instance Segmentation Model and Pose Estimation Model
+
+```bash
 cd SAM-6D
 sh demo.sh
 ```
 
+To use pre-acquired results from Instance Segmentation Model, download result file from [here](https://drive.google.com/file/d/1gZw8sRvr-8C2gbzO8yfg5151Sw-_Wvx3/view?usp=sharing) and place in `Instance_Segmentation_Model/log/sam/result_tless_ism.json`.
+This result was obtained using SAM on a GTX 1080 GPU.
+
+```bash
+cd SAM-6D/Pose_Estimation_Model
+sh test_bop.sh
+```
+
 ## Citation
-If you find our work useful in your research, please consider citing:
 
-    @article{lin2023sam,
-    title={SAM-6D: Segment Anything Model Meets Zero-Shot 6D Object Pose Estimation},
-    author={Lin, Jiehong and Liu, Lihua and Lu, Dekun and Jia, Kui},
-    journal={arXiv preprint arXiv:2311.15707},
-    year={2023}
-    }
+If you use this code or idea in your work, please cite the original SAM-6D paper:
 
-
-## Contact
-
-If you have any questions, please feel free to contact the authors. 
-
-Seungseok Oh: [littlestein@snu.ac.kr](mailto:littlestein@snu.ac.kr)
+```bibtex
+@article{lin2023sam,
+  title={SAM-6D: Segment Anything Model Meets Zero-Shot 6D Object Pose Estimation},
+  author={Lin, Jiehong and Liu, Lihua and Lu, Dekun and Jia, Kui},
+  journal={arXiv preprint arXiv:2311.15707},
+  year={2023}
+}
+```
