@@ -14,13 +14,23 @@ Key features:
 - Architecture-level improvement: No retraining of the original SAM-6D modules is required.
 - Improved performance: Outperforms single-view methods, especially in cluttered or symmetric scenes.
 
+The core implementation of our multi-view extension can be found in the following files:
+
+- `Pose_Estimation_Model/test_bop_multiview.py` 
+- `Pose_Estimation_Model/provider/bop_multiview_test_dataset.py`
+- `Pose_Estimation_Model/model/multiview_pose_estimation_model.py`
+- `Pose_Estimation_Model/model/feature_extraction.py`
+
+
+<center>
+    <img src="images/multiview-sam6d-result.png" alt="Multiview-SAM-6D-Result" width="50%"/>
+</center>
 
 ## Version check
 Validated with following environment: 
 - CUDA 11.8
 - python 3.9.6
 - pytorch 2.0.0+cu117
-
 
 ## Getting Started
 
@@ -37,7 +47,7 @@ Install the environment and download the model checkpoints:
 sh prepare.sh
 ```
 
-Also, for the demo run use example data that can be downloaded from [here]().
+Also, for the demo run use example data that can be downloaded from [here](https://drive.google.com/file/d/1xvcLY7Y7xjXKOSCwrHqQV3OdssjMuPOp/view?usp=sharing).
 
 ### 2. Demo run
 To run both Instance Segmentation Model and Pose Estimation Model
@@ -47,7 +57,8 @@ cd SAM-6D
 sh demo.sh
 ```
 
-To use pre-acquired results from Instance Segmentation Model, download result file from [here]() and place in `Instance_Segmentation_Model/log/sam/result_tless_ism.json`.
+To use pre-acquired results from Instance Segmentation Model, download result file from [here](https://drive.google.com/file/d/19AUDIn_5Uwu3MvKjQLbOk2SANPAaTyyw/view?usp=sharing) and place in `Instance_Segmentation_Model/log/sam/result_tless_ism.json`.
+This result was obtained using SAM on a GTX 1080 GPU.
 
 ```bash
 cd SAM-6D/Pose_Estimation_Model

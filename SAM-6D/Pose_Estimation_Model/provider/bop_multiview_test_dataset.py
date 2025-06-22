@@ -75,6 +75,9 @@ class BOPMultiviewTestset():
 
         self.batch_list = []
 
+        # Create batches of multiview images
+        # For example, if n_multiview=5, then each batch will contain 5 images from the same scene
+
         for scene_id in sorted(self.scene_to_img_ids.keys()):
             img_ids = list(self.scene_to_img_ids[scene_id])
             random.seed(42)
@@ -92,6 +95,9 @@ class BOPMultiviewTestset():
         batch_keys = self.batch_list[index]
         multiview_dict = []
 
+        # For each batch key, collect instances from the detections
+        # and prepare the multiview dictionary
+        
         for batch_key in batch_keys:
             all_instances = []
             dets = self.dets[batch_key]

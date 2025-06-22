@@ -136,7 +136,6 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
     bs = cfg.test_dataloader.bs
     cluster_summary_lines = []
 
-    # build dataloader
     def identity_collate(batch):
         return batch[0]
 
@@ -146,7 +145,7 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
             dataset,
             batch_size=1,
             num_workers=0,
-            shuffle=False, # cfg.test_dataloader.shuffle,
+            shuffle=False,
             sampler=None,
             drop_last=cfg.test_dataloader.drop_last,
             pin_memory=cfg.test_dataloader.pin_memory,
@@ -166,13 +165,13 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
     with tqdm(total=len(dataloder)) as t:
         for group_idx, data in enumerate(dataloder):
             print(f"=====================> Processing {group_idx+1}th multiview batch")
-            # data = dict_keys(['pts', 'rgb', 'rgb_choose', 'obj', 'model', 'obj_id', 'score', 'scene_id', 'img_id', 'seg_time']) -> for same scene & image show all proposals
+
             torch.cuda.synchronize()
             end = time.time()
 
-            # assert len(data) == cfg.test_dataset.n_multiview, \
-            #     f"Expected {cfg.test_dataset.n_multiview} images, but got {len(data)} images."
-
+            # ----------------------------------------------------------
+            # Step 0: Read results from ISM and save to multiview_datas
+            # ----------------------------------------------------------
             multiview_datas = []
             for single_img_data in data:
                 single_image_proposals = []
@@ -187,8 +186,10 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                 multiview_datas.append(single_image_proposals)
             all_proposals = sum(multiview_datas, [])  # flatten
             
-            ## Step 1: Cluster proposals
-            # Compute score and make similarity matrix
+            # ----------------------------------------------------------
+            # Step 1: Proposal Matching
+            # ----------------------------------------------------------
+
             N = len(all_proposals)
             S = np.zeros((N, N))
 
@@ -222,7 +223,10 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                     score = proposal['score'].item()
                     print(f"  obj_id: {obj_id}, score: {score:.4f}")
 
-            ## Step 2 : Inference multiview pose estimation for each objects with best ID
+            # ----------------------------------------------------------
+            # Step 2 : Inference multiview pose estimation for each cluster
+            # ----------------------------------------------------------
+
             cluster_results = {}
             obj_ids = []
             for label, proposals_for_obj in cluster_proposals.items():
@@ -284,12 +288,14 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                 with torch.no_grad():
                     end_points = model(batch_inputs)
                 
+                # ----------------------------------------------------------
+                # Step 3 : Object Classification
+                # ----------------------------------------------------------
+
                 pred_scores = end_points['pred_pose_score'] * end_points['score']
                 best_idx = torch.argmax(pred_scores).item()
                 best_proposal = proposals_for_obj[best_idx]
                 best_proposal_obj_id = best_proposal['obj_id'].item()
-                # R_final = end_points['pred_R'][best_idx]
-                # t_final = end_points['pred_t'][best_idx].view(-1)
 
                 R_c2w = best_proposal['cam_R_w2c'].squeeze(0).T
                 t_c2w = -R_c2w @ (best_proposal['cam_t_w2c'].squeeze(0) / 1000.0).view(3, 1)
@@ -308,12 +314,10 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                 for proposal_idx in range(len(proposals_for_obj)):
                     print(f"Proposal {proposal_idx}: obj_id: {proposals_for_obj[proposal_idx]['obj_id'].item()}, score: {pred_scores[proposal_idx]:.4f}")
                 
-            
-            cluster_summary_lines.append(f"{all_proposals[0]['scene_id'].view(-1)[0].item()},{group_idx+1},\"{sorted(obj_ids)}\"\n")
-            print(f"Cluster summary for scene {all_proposals[0]['scene_id'].item()}, group {group_idx+1}: {sorted(obj_ids)}")
-            with open(cluster_csv_path, 'w+') as f:
-                f.writelines(cluster_summary_lines)
+            # ----------------------------------------------------------
             # Step 3:  Write final pose of each cluster to every image in multiview_datas (sorted by img_id)
+            # ----------------------------------------------------------
+
             sorted_views = sorted(multiview_datas, key=lambda x: x[0]['img_id'].item())
 
             for view_proposals in sorted_views:
@@ -364,7 +368,6 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                         vis_img = visualize(img, [merged_pts_camera_frame.cpu().numpy()], [R_img.cpu().numpy()], [t_img.cpu().numpy()], model_points, K_, vis_path)
             t.update(1)
                     
-            # Clear data structures
             cluster_proposals.clear()
             multiview_datas.clear()
 
