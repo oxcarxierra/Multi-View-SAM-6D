@@ -74,12 +74,6 @@ def compute_depth_agreement(pts_world, cam_R_w2c, cam_t_w2c, K, depth_map):
     return score
     
 def compute_occlusion_consistency_score(pts_world, cam_R_w2c, cam_t_w2c, K, mask, depth_map):
-    """
-    When points are projected onto the other proposal's viewpoint, 
-    they should either be inside the visible mask or occluded (i.e., behind the depth).
-    If neither is true, it indicates inconsistency → compute the ratio of such violations and return as a score.
-    """
-    # 💡 Ensure mask and depth_map are numpy arrays
     if isinstance(mask, torch.Tensor):
         mask = mask.cpu().numpy()
     if isinstance(depth_map, torch.Tensor):

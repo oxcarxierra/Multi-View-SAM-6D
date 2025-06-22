@@ -140,7 +140,6 @@ def run_inference(segmentor_model, output_dir, cad_path, rgb_path, depth_path, c
         templates.append(image)
         masks.append(mask.unsqueeze(-1))
 
-    # import pdb; pdb.set_trace()
     templates = torch.stack(templates).permute(0, 3, 1, 2)
     masks = torch.stack(masks).permute(0, 3, 1, 2)
     boxes = torch.tensor(np.array(boxes))
@@ -200,23 +199,18 @@ def run_inference(segmentor_model, output_dir, cad_path, rgb_path, depth_path, c
         image_uv, detections, query_appe_descriptors, ref_aux_descriptor, visible_thred=model.visible_thred
         )
 
-    # final score 계산
     final_score = (semantic_score + appe_scores + geometric_score * visible_ratio) / (1 + 1 + visible_ratio)
 
     detections.add_attribute("scores", final_score)
     detections.add_attribute("object_ids", torch.zeros_like(final_score))   
 
-    # numpy 변환
     detections.to_numpy()
 
-    # 👉 final_score로 상위 5개만 선택
     scores_np = final_score.cpu().numpy()
-    top5_indices = np.argsort(-scores_np)[:5]  # 내림차순 상위 5개
+    top5_indices = np.argsort(-scores_np)[:5] 
 
-    # 필터링
     detections.filter(top5_indices)
 
-    # 저장
     save_path = f"{output_dir}/sam6d_results/101_detection_ism"
     detections.save_to_file(0, 0, 0, save_path, "Custom", return_results=False)
     detections = convert_npz_to_json(idx=0, list_npz_paths=[save_path + ".npz"])

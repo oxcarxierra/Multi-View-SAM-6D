@@ -335,7 +335,6 @@ class Instance_Segmentation_Model(pl.LightningModule):
         colors = distinctipy.get_colors(len(detections.scores))
         alpha = 0.33
 
-        # numpy 기준 max 인덱스 추출
         N = len(detections.scores)
         for i in range(N):
             mask = detections.masks[i].astype(bool)
