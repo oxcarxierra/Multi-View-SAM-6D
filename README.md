@@ -1,4 +1,4 @@
-# <p align="center"> <font color=#008000>Multi-view SAM-6D</font>: Improving Zero-Shot 6D Object Pose Estimation via Multi-View Aggregation</p>
+# <p align="center"> <font color=#008000>Multi-View SAM-6D</font>: Improving Zero-Shot 6D Object Pose Estimation via Multi-View Aggregation</p>
 
 | This is a coursework project for the 3D Vision course (Spring 2025) at ETH Zürich.
 
@@ -7,10 +7,10 @@
 
 ![System Architecture](images/multiview_architecture_diagram.png)
 
-Multi-view SAM-6D is based on the original SAM-6D framework and extends it to a multi-view setting.
+Multi-View SAM-6D is based on the original SAM-6D framework and extends it to a multi-view setting.
 
 Key features:
-- Multi-view fusion: Leverages multiple viewpoints to reduce occlusion and misclassification errors.
+- Multi-View fusion: Leverages multiple viewpoints to reduce occlusion and misclassification errors.
 - Architecture-level improvement: No retraining of the original SAM-6D modules is required.
 - Improved performance: Outperforms single-view methods, especially in cluttered or symmetric scenes.
 
@@ -37,7 +37,7 @@ Validated with following environment:
 ### 1. Preparation
 Please clone the repository locally:
 ```
-git clone https://github.com/oxcarxierra/SAM-6D.git
+git clone https://github.com/oxcarxierra/Multi-View-SAM-6D.git
 conda create env sam6d python=3.9.6
 cd SAM-6D && pip install requirements.txt
 ```

@@ -19,7 +19,6 @@ from collections import defaultdict
 from torchcpd import RigidRegistration
 # from draw_utils import draw_detections
 
-MAX_PROPOSALS = 10
 BATCH_LIMIT = 4  # adjust if needed
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -264,12 +263,9 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                     'pred_t': [],
                     'score': []
                 }
-
                 used_proposals = []
                 N = len(proposals_for_obj)
-
                 for i in range(0, N, BATCH_LIMIT):
-
                     batch_proposals = proposals_for_obj[i:i + BATCH_LIMIT]
                     used_proposals.extend(batch_proposals)
 
@@ -370,7 +366,7 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                     R_img = R_w2c @ R_final
                     t_img = ((R_w2c @ t_final.view(3, 1) + t_w2c.view(3, 1)).view(-1))*1000
 
-                    image_time = 0
+                    image_time = (time.time() - end)/len(sorted_views)
                     line = ','.join((
                         str(scene_id),
                         str(img_id),
