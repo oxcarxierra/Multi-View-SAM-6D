@@ -347,7 +347,7 @@ def test(model, cfg, save_path, dataset_name, detetion_path):
                     print(f"Proposal {proposal_idx}: obj_id: {proposals_for_obj[proposal_idx]['obj_id'].item()}, score: {pred_scores[proposal_idx]:.4f}")
                 
             # ----------------------------------------------------------
-            # Step 3:  Write final pose of each cluster to every image in multiview_datas (sorted by img_id)
+            # Step 4:  Write final pose of each cluster to every image in multiview_datas (sorted by img_id)
             # ----------------------------------------------------------
 
             sorted_views = sorted(multiview_datas, key=lambda x: x[0]['img_id'].item())
