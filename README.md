@@ -65,6 +65,28 @@ cd SAM-6D/Pose_Estimation_Model
 sh test_bop.sh
 ```
 
+### 3. External libraries
+
+
+| Library | Version | Link |
+|---------|---------|------|
+| torch | 2.0.0 | [https://pypi.org/project/torch/](https://pypi.org/project/torch/) |
+| torchvision | 0.15.1 | [https://pypi.org/project/torchvision/](https://pypi.org/project/torchvision/) |
+| pytorch-lightning | 1.8.1 | [https://pypi.org/project/pytorch-lightning/](https://pypi.org/project/pytorch-lightning/) |
+| segment-anything | commit dca509fe793f601edb92606367a655c15ac00fdf | [https://github.com/facebookresearch/segment-anything](https://github.com/facebookresearch/segment-anything) |
+| fvcore | 0.1.5.post20221221 | [https://github.com/facebookresearch/fvcore](https://github.com/facebookresearch/fvcore) |
+| gorilla-core | 0.2.7.8 | [https://pypi.org/project/gorilla-core/](https://pypi.org/project/gorilla-core/) |
+| opencv-python | 4.11.0.86 | [https://pypi.org/project/opencv-python/](https://pypi.org/project/opencv-python/) |
+| scikit-learn | 1.6.1 | [https://pypi.org/project/scikit-learn/](https://pypi.org/project/scikit-learn/) |
+| scipy | 1.13.1 | [https://pypi.org/project/scipy/](https://pypi.org/project/scipy/) |
+| pandas | 2.2.3 | [https://pypi.org/project/pandas/](https://pypi.org/project/pandas/) |
+| matplotlib | 3.9.4 | [https://pypi.org/project/matplotlib/](https://pypi.org/project/matplotlib/) |
+| tqdm | 4.67.1 | [https://pypi.org/project/tqdm/](https://pypi.org/project/tqdm/) |
+| trimesh | 4.0.8 | [https://pypi.org/project/trimesh/](https://pypi.org/project/trimesh/) |
+| pillow (PIL) | 11.1.0 | [https://pypi.org/project/Pillow/](https://pypi.org/project/Pillow/) |
+| numpy | 1.24.4 | [https://pypi.org/project/numpy/](https://pypi.org/project/numpy/) |
+
+
 ## Citation
 
 If you use this code or idea in your work, please cite the original SAM-6D paper:
